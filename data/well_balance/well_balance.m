@@ -112,6 +112,10 @@ Mp    = Msys/nmp * ones(nmp, 1);
 Vp    = Mp./rhosy;
 Ap    = Vp./hp;
 vp    = zeros (nmp,2);
+BINGHAM = 0;
+FRICTION = 0;
+CFL = 0.1;
+BC_FLAG = 0;
 
 momp  = zeros (nmp,2);
 
@@ -141,11 +145,63 @@ DATA = struct (
 	   "rho", rhosy, ...
 	   "Vp", Vp, ...
 	   "Z", Z, ...
-	   "dZdx", dZdx,
-	   "dZdy", dZdy
+	   "dZdx", dZdx, ...
+	   "dZdy", dZdy, ...
+	   "BINGHAM_ON", BINGHAM, ...
+       "FRICTION_ON", FRICTION, ...
+       "CFL", CFL, ...
+       "BC_FLAG",BC_FLAG
 	 );
-json = jsonencode(DATA);
+	 
+% --- Scrittura manuale del DATA.json ---
+function v2j (fid, name, x, last)
+  if isscalar(x) && ~ischar(x)
+    fprintf(fid, '"%s": %.17g', name, x);
+  elseif ischar(x)
+    fprintf(fid, '"%s": "%s"', name, x);
+  else
+    x = x(:);
+    fprintf(fid, '"%s": [', name);
+    fprintf(fid, '%.17g', x(1));
+    for k = 2:numel(x)
+      fprintf(fid, ',%.17g', x(k));
+    endfor
+    fprintf(fid, ']');
+  endif
+  if (~last)
+    fprintf(fid, ',\n');
+  else
+    fprintf(fid, '\n');
+  endif
+endfunction
 
 FID = fopen("DATA.json","w");
-fprintf(FID,json);
+fprintf(FID, "{\n");
+v2j(FID, "x",          xp,         false);
+v2j(FID, "y",          yp,         false);
+v2j(FID, "Mp",         Mp,         false);
+v2j(FID, "Ap",         Ap,         false);
+v2j(FID, "vpx",        vp(:,1),    false);
+v2j(FID, "vpy",        vp(:,2),    false);
+v2j(FID, "Nex",        nEx,        false);
+v2j(FID, "Ney",        nEy,        false);
+v2j(FID, "hx",         hl(1),      false);
+v2j(FID, "hy",         hl(2),      false);
+v2j(FID, "hp",         hp,         false);
+v2j(FID, "mom_px",     momp(:,1),  false);
+v2j(FID, "mom_py",     momp(:,2),  false);
+v2j(FID, "g",          g,          false);
+v2j(FID, "T",          T,          false);
+v2j(FID, "xi",         xi,         false);
+v2j(FID, "rho",        rhosy,      false);
+v2j(FID, "Vp",         Vp,         false);
+v2j(FID, "Z",          Z,          false);
+v2j(FID, "dZdx",       dZdx,       false);
+v2j(FID, "dZdy",       dZdy,       false);
+v2j(FID, "BC_FLAG",    0,          false);
+v2j(FID, "CFL",        0.1,        false);
+v2j(FID, "BINGHAM_ON", 0,          false);
+v2j(FID, "FRICTION_ON",0,          true);
+fprintf(FID, "}\n");
 fclose(FID);
+disp("DATA.json scritto correttamente");
