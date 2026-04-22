@@ -6,6 +6,7 @@
 #include <quadgrid_cpp.h>
 #include <timer.h>
 #include "mpm_data.h"
+#include "merge_split_ops.h"
 
 using idx_t = quadgrid_t<std::vector<double>>::idx_t;
 cdf::timer::timer_t my_timer{};
@@ -154,6 +155,14 @@ int main ()
 
     grid.vtk_export("GRID_forZ.vts", vars);
 
+    // Config merge/split
+    merge_split_config ms_cfg;
+    ms_cfg.min_per_cell  = 2;    
+    ms_cfg.max_per_cell  = 8;     
+    ms_cfg.call_interval = 10;    
+    ms_cfg.split_offset  = 0.25;  
+    ms_cfg.max_ops=10;
+
 
     dt = 1.0e-5;
     std::vector<idx_t> ordering (ptcls.num_particles);
@@ -242,6 +251,37 @@ int main ()
         vars["dZdy"] = data.dZdy;
 
 	my_timer.toc ("step 0");
+
+  // MERGE/SPLIT
+	if (it % ms_cfg.call_interval == 0 && it > 0) {
+	    merge_split (ptcls, ms_cfg);
+	    ptcls.init_particle_mesh ();
+	    // Aggiorna num_particles per i vettori locali
+	    num_particles = ptcls.num_particles;
+	    norm_v.resize (num_particles, 0.0);
+	    ALF.resize (num_particles, 0.0);
+	    B.resize (num_particles, -114./32.);
+	    s_xx.resize (num_particles, 0.0);
+	    s_xy.resize (num_particles, 0.0);
+	    s_yy.resize (num_particles, 0.0);
+	    D_xx.resize (num_particles, 0.0);
+	    D_xy.resize (num_particles, 0.0);
+	    D_xz.resize (num_particles, 0.0);
+	    D_yx.resize (num_particles, 0.0);
+	    D_yy.resize (num_particles, 0.0);
+	    D_yz.resize (num_particles, 0.0);
+	    D_zx.resize (num_particles, 0.0);
+	    D_zy.resize (num_particles, 0.0);
+	    D_zz.resize (num_particles, 0.0);
+	    invII.resize (num_particles, 0.0);
+	    Z1.resize (num_particles, 0.0);
+	    Z2.resize (num_particles, 0.0);
+	    ZZ.resize (num_particles, 0.0);
+	    sig_xx.resize (num_particles, 0.0);
+	    sig_xy.resize (num_particles, 0.0);
+	    sig_yy.resize (num_particles, 0.0);
+	    ordering.resize (num_particles);
+	}
 
 	// (1) PROJECTION FROM MP TO NODES (P2G)
 	my_timer.tic ("step 1");
