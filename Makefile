@@ -15,7 +15,7 @@ BUILDDIR   := $(ROOT)/build
 
 INCLUDES   := -I$(QGINC) -I$(JSONINC) -I$(TIMERINC) -I$(MAINDIR)
 CXXFLAGS   := $(CXXSTD) $(OPT) $(WARN) $(DEBUG) $(INCLUDES)
-LDFLAGS    :=
+LDFLAGS    := 
 LDLIBS     :=
 
 LIBOBJS    := $(BUILDDIR)/particles.o $(BUILDDIR)/timer.o

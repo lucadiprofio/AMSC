@@ -128,6 +128,7 @@ int main ()
     vars["dZdy"] = data.dZdy;
 
 
+    ptcls.init_particle_mesh ();
     ptcls.g2p (vars,std::vector<std::string>{"Z"},
 	       std::vector<std::string>{"Zp"});
     ptcls.dprops.at("dZxp").assign(ptcls.num_particles, 0.0);
