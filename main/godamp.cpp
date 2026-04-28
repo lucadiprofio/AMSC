@@ -158,7 +158,7 @@ int main ()
 
     dt = 1.0e-5;
     std::vector<idx_t> ordering (ptcls.num_particles);
-    while (t < 1.0) //data.T;
+    while (t < data.T) //data.T;
         {
 
   	my_timer.tic ("update dt");

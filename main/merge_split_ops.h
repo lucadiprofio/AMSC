@@ -187,6 +187,11 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
       case SPLIT: {
         particle_data mother = extract_particle (ptcls, i);
 
+        if (mother.ip["level"] <= -2) {
+          add_particle (mother);
+          break;
+        }
+
         double x1 = mother.px - offset, x2 = mother.px + offset;
         double y1 = mother.py,          y2 = mother.py;
 
@@ -208,6 +213,7 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
         d1.dp["mom_px"] = d1.dp["Mp"] * d1.dp["vpx"];
         d1.dp["mom_py"] = d1.dp["Mp"] * d1.dp["vpy"];
         d1.ip["label"] = -1;
+        d1.ip["level"] = mother.ip["level"] - 1;
         add_particle (d1);
 
         // Daughter 2
@@ -219,6 +225,7 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
         d2.dp["mom_px"] = d2.dp["Mp"] * d2.dp["vpx"];
         d2.dp["mom_py"] = d2.dp["Mp"] * d2.dp["vpy"];
         d2.ip["label"] = -1;
+        d2.ip["level"] = mother.ip["level"] - 1;
         add_particle (d2);
 
         break;
@@ -251,10 +258,19 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
         merged.dp["yp"] = merged.py;
         merged.dp["mom_px"] = merged.dp["Mp"] * merged.dp["vpx"];
         merged.dp["mom_py"] = merged.dp["Mp"] * merged.dp["vpy"];
+        merged.ip["level"] = p1.ip["level"] + 1;
 
         for (auto & key : ip_keys)
           merged.ip[key] = p1.ip[key];
 
+        // Non mergere sopra livello +2
+        if (p1.ip["level"] >= 2) {
+          add_particle (p1);
+          particle_data p2_keep = extract_particle (ptcls, j);
+          add_particle (p2_keep);
+          break;
+        }
+          
         add_particle (merged);
         break;
       }

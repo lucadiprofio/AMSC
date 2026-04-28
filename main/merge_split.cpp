@@ -20,7 +20,7 @@ int main ()
   grid.set_sizes (data.Ney, data.Nex, data.hx, data.hy);
 
   idx_t num_particles = data.x.size();
-  particles_t ptcls (num_particles, {"label"}, {"Mp", "Ap","vpx","vpy","mom_px","mom_py","hp",
+  particles_t ptcls (num_particles, {"label", "level"}, {"Mp", "Ap","vpx","vpy","mom_px","mom_py","hp",
 	      "Vp","F_ext_px","F_ext_py","apx","apy",
 	      "F_11","F_12","F_21","F_22","vpx_dx","vpx_dy",
 	      "vpy_dx","vpy_dy","Fb_x","Fb_y","hpZ","dZxp","dZyp","Zp","xp","yp","Fric_px","Fric_py"}, grid, data.x, data.y);
@@ -55,6 +55,7 @@ int main ()
 
 
   std::iota(ptcls.iprops["label"].begin(),ptcls.iprops["label"].end(),0);
+  std::fill(ptcls.iprops["level"].begin(),ptcls.iprops["level"].end(),0);
 
   double t = 0.0;
   double dt  ;
@@ -167,7 +168,7 @@ int main ()
 
     dt = 1.0e-5;
     std::vector<idx_t> ordering (ptcls.num_particles);
-    while (t < 1.0) //data.T;
+    while (t < data.T) //data.T;
         {
 
   	my_timer.tic ("update dt");
