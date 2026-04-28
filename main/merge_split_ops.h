@@ -18,8 +18,6 @@ struct merge_split_config {
   int    max_ops       = 10;
 };
 
-
-
 static const std::set<std::string> extensive_props = {
   "Mp", "Vp", "Ap", "mom_px", "mom_py"
 };
@@ -54,35 +52,139 @@ print_conservation (const std::string & label, const conservation_check & cc)
             << "  momy=" << cc.total_momy << std::endl;
 }
 
+// ============================================================
+// Helper: find index of a key in dp_keys/ip_keys
+// ============================================================
 
-// Struct for a single particle
-struct particle_data {
-  double px, py;
-  std::map<std::string, double> dp;
-  std::map<std::string, particles_t::idx_t> ip;
-};
-
-inline particle_data
-extract_particle (const particles_t & ptcls, particles_t::idx_t i)
+inline std::size_t
+find_key (const std::vector<std::string> & keys, const std::string & name)
 {
-  particle_data p;
-  p.px = ptcls.x[i];
-  p.py = ptcls.y[i];
-  for (auto & [key, vec] : ptcls.dprops)
-    p.dp[key] = vec[i];
-  for (auto & [key, vec] : ptcls.iprops)
-    p.ip[key] = vec[i];
-  return p;
+  for (std::size_t k = 0; k < keys.size (); ++k)
+    if (keys[k] == name) return k;
+  return keys.size ();  // not found
 }
 
+// ============================================================
+// Helper: copy particle i directly from ptcls to new arrays
+// ============================================================
 
+inline void
+copy_particle (const particles_t & ptcls,
+               particles_t::idx_t i,
+               std::vector<double> & nx, std::vector<double> & ny,
+               std::vector<std::vector<double>> & ndp,
+               std::vector<std::vector<particles_t::idx_t>> & nip,
+               const std::vector<std::string> & dp_keys,
+               const std::vector<std::string> & ip_keys)
+{
+  nx.push_back (ptcls.x[i]);
+  ny.push_back (ptcls.y[i]);
+  for (std::size_t k = 0; k < dp_keys.size (); ++k)
+    ndp[k].push_back (ptcls.dprops.at (dp_keys[k])[i]);
+  for (std::size_t k = 0; k < ip_keys.size (); ++k)
+    nip[k].push_back (ptcls.iprops.at (ip_keys[k])[i]);
+}
 
-// It builds a NEW set of particles.
-// For each original particle, it decides:
-// - KEEP: Copy it into the new set
-// - SPLIT: Create 2 children in the new set
-// - MERGE: Combine it with its partner in the new set
-// Finally, replace everything in ptcls.
+// ============================================================
+// Helper: add a split daughter from mother at index i
+// dx, dy = offset from mother position
+// ============================================================
+
+inline void
+add_split_daughter (const particles_t & ptcls,
+                    particles_t::idx_t i,
+                    double dx, double dy,
+                    std::vector<double> & nx, std::vector<double> & ny,
+                    std::vector<std::vector<double>> & ndp,
+                    std::vector<std::vector<particles_t::idx_t>> & nip,
+                    const std::vector<std::string> & dp_keys,
+                    const std::vector<std::string> & ip_keys,
+                    std::size_t idx_xp, std::size_t idx_yp,
+                    std::size_t idx_Mp, std::size_t idx_vpx, std::size_t idx_vpy,
+                    std::size_t idx_momx, std::size_t idx_momy,
+                    std::size_t idx_label, std::size_t idx_level)
+{
+  double new_px = ptcls.x[i] + dx;
+  double new_py = ptcls.y[i] + dy;
+
+  nx.push_back (new_px);
+  ny.push_back (new_py);
+
+  // Copy all dprops: halve extensive, inherit intensive
+  for (std::size_t k = 0; k < dp_keys.size (); ++k) {
+    double val = ptcls.dprops.at (dp_keys[k])[i];
+    ndp[k].push_back (is_extensive (dp_keys[k]) ? val / 2.0 : val);
+  }
+
+  // Copy all iprops
+  for (std::size_t k = 0; k < ip_keys.size (); ++k)
+    nip[k].push_back (ptcls.iprops.at (ip_keys[k])[i]);
+
+  // Fix xp, yp, momentum, label, level on the last inserted element
+  std::size_t last = nx.size () - 1;
+  ndp[idx_xp][last] = new_px;
+  ndp[idx_yp][last] = new_py;
+  double mp = ndp[idx_Mp][last];
+  ndp[idx_momx][last] = mp * ndp[idx_vpx][last];
+  ndp[idx_momy][last] = mp * ndp[idx_vpy][last];
+  nip[idx_label][last] = -1;
+  nip[idx_level][last] = ptcls.iprops.at ("level")[i] - 1;
+}
+
+// ============================================================
+// Helper: add a merged particle from particles i1 and i2
+// ============================================================
+
+inline void
+add_merged_particle (const particles_t & ptcls,
+                     particles_t::idx_t i1, particles_t::idx_t i2,
+                     std::vector<double> & nx, std::vector<double> & ny,
+                     std::vector<std::vector<double>> & ndp,
+                     std::vector<std::vector<particles_t::idx_t>> & nip,
+                     const std::vector<std::string> & dp_keys,
+                     const std::vector<std::string> & ip_keys,
+                     std::size_t idx_xp, std::size_t idx_yp,
+                     std::size_t idx_Mp, std::size_t idx_vpx, std::size_t idx_vpy,
+                     std::size_t idx_momx, std::size_t idx_momy,
+                     std::size_t idx_level)
+{
+  double M1 = ptcls.dprops.at ("Mp")[i1];
+  double M2 = ptcls.dprops.at ("Mp")[i2];
+  double Mtot = M1 + M2;
+
+  double new_px = (M1 * ptcls.x[i1] + M2 * ptcls.x[i2]) / Mtot;
+  double new_py = (M1 * ptcls.y[i1] + M2 * ptcls.y[i2]) / Mtot;
+
+  nx.push_back (new_px);
+  ny.push_back (new_py);
+
+  // dprops: sum extensive, mass-weighted average intensive
+  for (std::size_t k = 0; k < dp_keys.size (); ++k) {
+    double v1 = ptcls.dprops.at (dp_keys[k])[i1];
+    double v2 = ptcls.dprops.at (dp_keys[k])[i2];
+    if (is_extensive (dp_keys[k]))
+      ndp[k].push_back (v1 + v2);
+    else
+      ndp[k].push_back ((M1 * v1 + M2 * v2) / Mtot);
+  }
+
+  // iprops: inherit from first
+  for (std::size_t k = 0; k < ip_keys.size (); ++k)
+    nip[k].push_back (ptcls.iprops.at (ip_keys[k])[i1]);
+
+  // Fix xp, yp, momentum, level
+  std::size_t last = nx.size () - 1;
+  ndp[idx_xp][last] = new_px;
+  ndp[idx_yp][last] = new_py;
+  double mp = ndp[idx_Mp][last];
+  ndp[idx_momx][last] = mp * ndp[idx_vpx][last];
+  ndp[idx_momy][last] = mp * ndp[idx_vpy][last];
+  nip[idx_level][last] = ptcls.iprops.at ("level")[i1] + 1;
+}
+
+// ============================================================
+// MAIN FUNCTION
+// ============================================================
 
 inline void
 merge_split (particles_t & ptcls, const merge_split_config & cfg)
@@ -93,7 +195,7 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
   auto cc_before = compute_conservation (ptcls);
   print_conservation ("BEFORE merge/split", cc_before);
 
- //Decide what to do for each particle
+  // ---- PHASE 1: Decide actions ----
 
   enum action_t { KEEP, SPLIT, MERGE_PRIMARY, MERGE_SECONDARY };
   std::vector<action_t> action (N, KEEP);
@@ -104,7 +206,6 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
   for (auto & [cell_idx, ptcl_list] : ptcls.grd_to_ptcl) {
     int np = static_cast<int> (ptcl_list.size ());
 
-    //if n_particles < n_minimo then SPLIT
     if (np > 0 && np < cfg.min_per_cell) {
       for (auto ip : ptcl_list) {
         if (n_splits < cfg.max_ops) {
@@ -114,7 +215,6 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
       }
     }
 
-    //if n_particles > n_massimo then MERGE
     if (np > cfg.max_per_cell) {
       int excess = np - cfg.max_per_cell;
       for (int k = 0; k + 1 < 2 * excess && k + 1 < np; k += 2) {
@@ -132,7 +232,6 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
     }
   }
 
-  //If no splits or merge to do, return
   if (n_splits == 0 && n_merges == 0) {
     print_conservation ("AFTER  merge/split (no-op)", cc_before);
     return;
@@ -140,7 +239,7 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
 
   std::cerr << "  splits: " << n_splits << "  merges: " << n_merges << std::endl;
 
-  //Build a new set of particle
+  // ---- PHASE 2: Prepare new arrays ----
 
   double offset = cfg.split_offset * ptcls.grid.hx ();
   double xmin = 0.0;
@@ -148,150 +247,118 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
   double ymin = 0.0;
   double ymax = ptcls.grid.num_rows () * ptcls.grid.hy ();
 
-  idx_t est_size = N + n_splits - n_merges;
-  std::vector<double> new_x, new_y;
-  new_x.reserve (est_size);
-  new_y.reserve (est_size);
-
-  // Collect existing keys
+  // Collect keys
   std::vector<std::string> dp_keys, ip_keys;
   for (auto & [key, vec] : ptcls.dprops) dp_keys.push_back (key);
   for (auto & [key, vec] : ptcls.iprops) ip_keys.push_back (key);
 
+  // Pre-compute indices for frequently accessed fields
+  std::size_t idx_xp    = find_key (dp_keys, "xp");
+  std::size_t idx_yp    = find_key (dp_keys, "yp");
+  std::size_t idx_Mp    = find_key (dp_keys, "Mp");
+  std::size_t idx_vpx   = find_key (dp_keys, "vpx");
+  std::size_t idx_vpy   = find_key (dp_keys, "vpy");
+  std::size_t idx_momx  = find_key (dp_keys, "mom_px");
+  std::size_t idx_momy  = find_key (dp_keys, "mom_py");
+  std::size_t idx_label = find_key (ip_keys, "label");
+  std::size_t idx_level = find_key (ip_keys, "level");
+
+  // Allocate new arrays
+  idx_t est = N + n_splits - n_merges;
+  std::vector<double> new_x, new_y;
+  new_x.reserve (est);
+  new_y.reserve (est);
+
   std::vector<std::vector<double>> new_dp (dp_keys.size ());
   std::vector<std::vector<idx_t>> new_ip (ip_keys.size ());
-  for (std::size_t k = 0; k < dp_keys.size (); ++k)
-    new_dp[k].reserve (est_size);
-  for (std::size_t k = 0; k < ip_keys.size (); ++k)
-    new_ip[k].reserve (est_size);
+  for (std::size_t k = 0; k < dp_keys.size (); ++k) new_dp[k].reserve (est);
+  for (std::size_t k = 0; k < ip_keys.size (); ++k) new_ip[k].reserve (est);
 
-  auto add_particle = [&] (const particle_data & p) {
-    new_x.push_back (p.px);
-    new_y.push_back (p.py);
-    for (std::size_t k = 0; k < dp_keys.size (); ++k)
-      new_dp[k].push_back (p.dp.at (dp_keys[k]));
-    for (std::size_t k = 0; k < ip_keys.size (); ++k)
-      new_ip[k].push_back (p.ip.at (ip_keys[k]));
-  };
+  // ---- PHASE 3: Build new particle set ----
 
   for (idx_t i = 0; i < N; ++i) {
 
     switch (action[i]) {
 
       case KEEP: {
-        particle_data p = extract_particle (ptcls, i);
-        add_particle (p);
+        copy_particle (ptcls, i, new_x, new_y, new_dp, new_ip, dp_keys, ip_keys);
         break;
       }
 
       case SPLIT: {
-        particle_data mother = extract_particle (ptcls, i);
-
-        if (mother.ip["level"] <= -2) {
-          add_particle (mother);
+        // Level check: don't split below -2
+        if (ptcls.iprops.at ("level")[i] <= -2) {
+          copy_particle (ptcls, i, new_x, new_y, new_dp, new_ip, dp_keys, ip_keys);
           break;
         }
 
-        double x1 = mother.px - offset, x2 = mother.px + offset;
-        double y1 = mother.py,          y2 = mother.py;
+        // Compute daughter positions
+        double dx = offset, dy = 0.0;
+        double x1 = ptcls.x[i] - dx, x2 = ptcls.x[i] + dx;
 
+        // If out of domain along x, try along y
         if (x1 < xmin + 1e-10 || x2 > xmax - 1e-10) {
-          x1 = mother.px;  x2 = mother.px;
-          y1 = mother.py - offset;  y2 = mother.py + offset;
+          dx = 0.0;  dy = offset;
+          double y1 = ptcls.y[i] - dy, y2 = ptcls.y[i] + dy;
           if (y1 < ymin + 1e-10 || y2 > ymax - 1e-10) {
-            add_particle (mother);
+            copy_particle (ptcls, i, new_x, new_y, new_dp, new_ip, dp_keys, ip_keys);
             break;
           }
         }
 
-        // Daughter 1
-        particle_data d1 = mother;
-        d1.px = x1;  d1.py = y1;
-        d1.dp["xp"] = x1;  d1.dp["yp"] = y1;
-        for (auto & key : extensive_props)
-          d1.dp[key] = mother.dp.at (key) / 2.0;
-        d1.dp["mom_px"] = d1.dp["Mp"] * d1.dp["vpx"];
-        d1.dp["mom_py"] = d1.dp["Mp"] * d1.dp["vpy"];
-        d1.ip["label"] = -1;
-        d1.ip["level"] = mother.ip["level"] - 1;
-        add_particle (d1);
+        // Add two daughters
+        add_split_daughter (ptcls, i, -dx, -dy,
+                            new_x, new_y, new_dp, new_ip,
+                            dp_keys, ip_keys,
+                            idx_xp, idx_yp, idx_Mp, idx_vpx, idx_vpy,
+                            idx_momx, idx_momy, idx_label, idx_level);
 
-        // Daughter 2
-        particle_data d2 = mother;
-        d2.px = x2;  d2.py = y2;
-        d2.dp["xp"] = x2;  d2.dp["yp"] = y2;
-        for (auto & key : extensive_props)
-          d2.dp[key] = mother.dp.at (key) / 2.0;
-        d2.dp["mom_px"] = d2.dp["Mp"] * d2.dp["vpx"];
-        d2.dp["mom_py"] = d2.dp["Mp"] * d2.dp["vpy"];
-        d2.ip["label"] = -1;
-        d2.ip["level"] = mother.ip["level"] - 1;
-        add_particle (d2);
-
+        add_split_daughter (ptcls, i, +dx, +dy,
+                            new_x, new_y, new_dp, new_ip,
+                            dp_keys, ip_keys,
+                            idx_xp, idx_yp, idx_Mp, idx_vpx, idx_vpy,
+                            idx_momx, idx_momy, idx_label, idx_level);
         break;
       }
 
       case MERGE_PRIMARY: {
         idx_t j = merge_partner[i];
-        particle_data p1 = extract_particle (ptcls, i);
-        particle_data p2 = extract_particle (ptcls, j);
 
-        double M1 = p1.dp["Mp"];
-        double M2 = p2.dp["Mp"];
-        double Mtot = M1 + M2;
+        // Level check: don't merge above +2
+        if (ptcls.iprops.at ("level")[i] >= 2) {
+          copy_particle (ptcls, i, new_x, new_y, new_dp, new_ip, dp_keys, ip_keys);
+          copy_particle (ptcls, j, new_x, new_y, new_dp, new_ip, dp_keys, ip_keys);
+          break;
+        }
+
+        double Mtot = ptcls.dprops.at ("Mp")[i] + ptcls.dprops.at ("Mp")[j];
         if (Mtot < 1e-15) {
-          add_particle (p1);
+          copy_particle (ptcls, i, new_x, new_y, new_dp, new_ip, dp_keys, ip_keys);
           break;
         }
 
-        particle_data merged;
-        merged.px = (M1 * p1.px + M2 * p2.px) / Mtot;
-        merged.py = (M1 * p1.py + M2 * p2.py) / Mtot;
-
-        for (auto & key : dp_keys) {
-          if (is_extensive (key))
-            merged.dp[key] = p1.dp[key] + p2.dp[key];
-          else
-            merged.dp[key] = (M1 * p1.dp[key] + M2 * p2.dp[key]) / Mtot;
-        }
-        merged.dp["xp"] = merged.px;
-        merged.dp["yp"] = merged.py;
-        merged.dp["mom_px"] = merged.dp["Mp"] * merged.dp["vpx"];
-        merged.dp["mom_py"] = merged.dp["Mp"] * merged.dp["vpy"];
-        merged.ip["level"] = p1.ip["level"] + 1;
-
-        for (auto & key : ip_keys)
-          merged.ip[key] = p1.ip[key];
-
-        // Non mergere sopra livello +2
-        if (p1.ip["level"] >= 2) {
-          add_particle (p1);
-          particle_data p2_keep = extract_particle (ptcls, j);
-          add_particle (p2_keep);
-          break;
-        }
-          
-        add_particle (merged);
+        add_merged_particle (ptcls, i, j,
+                             new_x, new_y, new_dp, new_ip,
+                             dp_keys, ip_keys,
+                             idx_xp, idx_yp, idx_Mp, idx_vpx, idx_vpy,
+                             idx_momx, idx_momy, idx_level);
         break;
       }
 
       case MERGE_SECONDARY:
+        // Already handled by MERGE_PRIMARY
         break;
     }
   }
 
-  // Replace in ptcls
+  // ---- PHASE 4: Replace in ptcls ----
 
   ptcls.x = std::move (new_x);
   ptcls.y = std::move (new_y);
-
   for (std::size_t k = 0; k < dp_keys.size (); ++k)
     ptcls.dprops[dp_keys[k]] = std::move (new_dp[k]);
-
-  for (std::size_t k = 0; k < ip_keys.size (); ++k){
+  for (std::size_t k = 0; k < ip_keys.size (); ++k)
     ptcls.iprops[ip_keys[k]] = std::move (new_ip[k]);
-  }
-
   ptcls.num_particles = ptcls.x.size ();
 
   auto cc_after = compute_conservation (ptcls);
@@ -303,4 +370,3 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
 }
 
 #endif
-
