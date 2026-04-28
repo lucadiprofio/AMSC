@@ -13,8 +13,8 @@
 struct merge_split_config {
   int    min_per_cell  = 2;
   int    max_per_cell  = 8;
-  int    call_interval = 10;
-  double split_offset  = 0.25;
+  int    call_interval = 50;
+  double split_offset  = 0.05;
   int    max_ops       = 10;
 };
 
@@ -207,6 +207,7 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
           d1.dp[key] = mother.dp.at (key) / 2.0;
         d1.dp["mom_px"] = d1.dp["Mp"] * d1.dp["vpx"];
         d1.dp["mom_py"] = d1.dp["Mp"] * d1.dp["vpy"];
+        d1.ip["label"] = -1;
         add_particle (d1);
 
         // Daughter 2
@@ -217,6 +218,7 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
           d2.dp[key] = mother.dp.at (key) / 2.0;
         d2.dp["mom_px"] = d2.dp["Mp"] * d2.dp["vpx"];
         d2.dp["mom_py"] = d2.dp["Mp"] * d2.dp["vpy"];
+        d2.ip["label"] = -1;
         add_particle (d2);
 
         break;

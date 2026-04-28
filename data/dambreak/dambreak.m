@@ -18,7 +18,8 @@ hy = 30/neley;
 
 [X, Y] = meshgrid (x, y);
 
-Z =ones(size(X));% 0*X;
+Z = 5 - 0.05 * X;
+Z(Z < 0) = 0;
 
 
 ##h = 0*Z;
@@ -39,11 +40,12 @@ DX = .5; DY = .5;
 
 %hp = interp2 (X, Y, h, xp, yp, 'spline');
 hp = 5.*ones(size(xp));
+hp(xp > 50) = 0;
 hp = hp(:);
 xp = xp(:);
 yp = yp(:);
 
-hzero = find (hp <= 1);
+hzero = find (hp <= 0.001);
 hp(hzero) = [];
 xp(hzero) = [];
 yp(hzero) = [];

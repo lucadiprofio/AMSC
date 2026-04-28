@@ -284,9 +284,9 @@ int main ()
 	      {
 		auto gv = icell -> gt (inode);
 
-		vars["F_ext_vx"][gv] = -  vars["Mv"][gv] *  9.81 * 0.0 * vars["dZdx"][gv] + vars["Fric_x"][gv]; // vars["dZdx"][gv]; // vars["dZdx"][gv]; //  dZdx[gv]  ; //-  ptcls.dprops["Ap"][gp] * ptcls.dprops["Fb_x"][gp];
+		vars["F_ext_vx"][gv] = -  vars["Mv"][gv] *  9.81 * 1.0 * vars["dZdx"][gv] + vars["Fric_x"][gv]; // vars["dZdx"][gv]; // vars["dZdx"][gv]; //  dZdx[gv]  ; //-  ptcls.dprops["Ap"][gp] * ptcls.dprops["Fb_x"][gp];
 
-		vars["F_ext_vy"][gv] = -  vars["Mv"][gv] *  9.81 * 0.0 *  vars["dZdy"][gv] + vars["Fric_y"][gv]; // vars["dZdy"][gv]; //  -   ptcls.dprops["Ap"][gp] *  ptcls.dprops["Fb_y"][gp];
+		vars["F_ext_vy"][gv] = -  vars["Mv"][gv] *  9.81 * 1.0 *  vars["dZdy"][gv] + vars["Fric_y"][gv]; // vars["dZdy"][gv]; //  -   ptcls.dprops["Ap"][gp] *  ptcls.dprops["Fb_y"][gp];
 
 	      }
 

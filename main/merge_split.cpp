@@ -158,11 +158,11 @@ int main ()
 
     // Config merge/split
     merge_split_config ms_cfg;
-    ms_cfg.min_per_cell  = 2;    
+    ms_cfg.min_per_cell  = 3;    
     ms_cfg.max_per_cell  = 8;     
-    ms_cfg.call_interval = 10;    
-    ms_cfg.split_offset  = 0.25;  
-    ms_cfg.max_ops=10;
+    ms_cfg.call_interval = 20;    
+    ms_cfg.split_offset  = 0.05;  
+    ms_cfg.max_ops=100;
 
 
     dt = 1.0e-5;
@@ -324,9 +324,9 @@ int main ()
 	      {
 		auto gv = icell -> gt (inode);
 
-		vars["F_ext_vx"][gv] = -  vars["Mv"][gv] *  9.81 * 0.0 * vars["dZdx"][gv] + vars["Fric_x"][gv]; // vars["dZdx"][gv]; // vars["dZdx"][gv]; //  dZdx[gv]  ; //-  ptcls.dprops["Ap"][gp] * ptcls.dprops["Fb_x"][gp];
+		vars["F_ext_vx"][gv] = -  vars["Mv"][gv] *  9.81 * 1.0 * vars["dZdx"][gv] + vars["Fric_x"][gv]; // vars["dZdx"][gv]; // vars["dZdx"][gv]; //  dZdx[gv]  ; //-  ptcls.dprops["Ap"][gp] * ptcls.dprops["Fb_x"][gp];
 
-		vars["F_ext_vy"][gv] = -  vars["Mv"][gv] *  9.81 * 0.0 *  vars["dZdy"][gv] + vars["Fric_y"][gv]; // vars["dZdy"][gv]; //  -   ptcls.dprops["Ap"][gp] *  ptcls.dprops["Fb_y"][gp];
+		vars["F_ext_vy"][gv] = -  vars["Mv"][gv] *  9.81 * 1.0 *  vars["dZdy"][gv] + vars["Fric_y"][gv]; // vars["dZdy"][gv]; //  -   ptcls.dprops["Ap"][gp] *  ptcls.dprops["Fb_y"][gp];
 
 	      }
 
