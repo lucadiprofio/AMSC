@@ -52,10 +52,7 @@ print_conservation (const std::string & label, const conservation_check & cc)
             << "  momy=" << cc.total_momy << std::endl;
 }
 
-// ============================================================
 // Helper: find index of a key in dp_keys/ip_keys
-// ============================================================
-
 inline std::size_t
 find_key (const std::vector<std::string> & keys, const std::string & name)
 {
@@ -64,10 +61,7 @@ find_key (const std::vector<std::string> & keys, const std::string & name)
   return keys.size ();  // not found
 }
 
-// ============================================================
-// Helper: copy particle i directly from ptcls to new arrays
-// ============================================================
-
+// copy particle i directly from ptcls to new arrays
 inline void
 copy_particle (const particles_t & ptcls,
                particles_t::idx_t i,
@@ -85,10 +79,9 @@ copy_particle (const particles_t & ptcls,
     nip[k].push_back (ptcls.iprops.at (ip_keys[k])[i]);
 }
 
-// ============================================================
-// Helper: add a split daughter from mother at index i
+
+// add a split daughter from mother at index i
 // dx, dy = offset from mother position
-// ============================================================
 
 inline void
 add_split_daughter (const particles_t & ptcls,
@@ -131,10 +124,7 @@ add_split_daughter (const particles_t & ptcls,
   nip[idx_level][last] = ptcls.iprops.at ("level")[i] - 1;
 }
 
-// ============================================================
-// Helper: add a merged particle from particles i1 and i2
-// ============================================================
-
+//add a merged particle from particles i1 and i2
 inline void
 add_merged_particle (const particles_t & ptcls,
                      particles_t::idx_t i1, particles_t::idx_t i2,
@@ -182,10 +172,7 @@ add_merged_particle (const particles_t & ptcls,
   nip[idx_level][last] = ptcls.iprops.at ("level")[i1] + 1;
 }
 
-// ============================================================
 // MAIN FUNCTION
-// ============================================================
-
 inline void
 merge_split (particles_t & ptcls, const merge_split_config & cfg)
 {
@@ -195,7 +182,7 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
   auto cc_before = compute_conservation (ptcls);
   print_conservation ("BEFORE merge/split", cc_before);
 
-  // ---- PHASE 1: Decide actions ----
+  //  PHASE 1: Decide actions
 
   enum action_t { KEEP, SPLIT, MERGE_PRIMARY, MERGE_SECONDARY };
   std::vector<action_t> action (N, KEEP);
@@ -206,7 +193,52 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
   for (auto & [cell_idx, ptcl_list] : ptcls.grd_to_ptcl) {
     int np = static_cast<int> (ptcl_list.size ());
 
-    if (np > 0 && np < cfg.min_per_cell) {
+    // Determine if this cell is on the material border
+    idx_t row = cell_idx / ptcls.grid.num_cols ();
+    idx_t col = cell_idx % ptcls.grid.num_cols ();
+
+    bool is_border = false;
+    idx_t ncols = ptcls.grid.num_cols ();
+    idx_t nrows = ptcls.grid.num_rows ();
+
+    // Check 4 neighbors: up, down, left, right
+    if (row > 0) {
+      idx_t nc = (row - 1) * ncols + col;
+      if (ptcls.grd_to_ptcl.count (nc) == 0 || ptcls.grd_to_ptcl.at (nc).empty ())
+        is_border = true;
+    } else {
+      is_border = true; 
+    }
+    if (!is_border && row < nrows - 1) {
+      idx_t nc = (row + 1) * ncols + col;
+      if (ptcls.grd_to_ptcl.count (nc) == 0 || ptcls.grd_to_ptcl.at (nc).empty ())
+        is_border = true;
+    } else if (row >= nrows - 1) {
+      is_border = true;
+    }
+    if (!is_border && col > 0) {
+      idx_t nc = row * ncols + (col - 1);
+      if (ptcls.grd_to_ptcl.count (nc) == 0 || ptcls.grd_to_ptcl.at (nc).empty ())
+        is_border = true;
+    } else if (col <= 0) {
+      is_border = true;
+    }
+    if (!is_border && col < ncols - 1) {
+      idx_t nc = row * ncols + (col + 1);
+      if (ptcls.grd_to_ptcl.count (nc) == 0 || ptcls.grd_to_ptcl.at (nc).empty ())
+        is_border = true;
+    } else if (col >= ncols - 1) {
+      is_border = true;
+    }
+
+    // Dynamic thresholds
+    int local_min = is_border ? cfg.min_per_cell + 1 : cfg.min_per_cell - 1;
+    int local_max = is_border ? cfg.max_per_cell + 4 : cfg.max_per_cell - 4;
+    if (local_min < 1) local_min = 1;
+    if (local_max < 2) local_max = 2;
+
+    // SPLIT
+    if (np > 0 && np < local_min) {
       for (auto ip : ptcl_list) {
         if (n_splits < cfg.max_ops) {
           action[ip] = SPLIT;
@@ -215,8 +247,9 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
       }
     }
 
-    if (np > cfg.max_per_cell) {
-      int excess = np - cfg.max_per_cell;
+    // MERGE
+    if (np > local_max) {
+      int excess = np - local_max;
       for (int k = 0; k + 1 < 2 * excess && k + 1 < np; k += 2) {
         if (n_merges < cfg.max_ops) {
           idx_t i1 = ptcl_list[k];
@@ -239,7 +272,7 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
 
   std::cerr << "  splits: " << n_splits << "  merges: " << n_merges << std::endl;
 
-  // ---- PHASE 2: Prepare new arrays ----
+  //PHASE 2: Prepare new arrays
 
   double offset = cfg.split_offset * ptcls.grid.hx ();
   double xmin = 0.0;
@@ -274,7 +307,7 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
   for (std::size_t k = 0; k < dp_keys.size (); ++k) new_dp[k].reserve (est);
   for (std::size_t k = 0; k < ip_keys.size (); ++k) new_ip[k].reserve (est);
 
-  // ---- PHASE 3: Build new particle set ----
+  // PHASE 3: Build new particle set
 
   for (idx_t i = 0; i < N; ++i) {
 
@@ -351,7 +384,7 @@ merge_split (particles_t & ptcls, const merge_split_config & cfg)
     }
   }
 
-  // ---- PHASE 4: Replace in ptcls ----
+  // PHASE 4: Replace in ptcls
 
   ptcls.x = std::move (new_x);
   ptcls.y = std::move (new_y);
