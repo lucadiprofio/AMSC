@@ -1,6 +1,6 @@
 [submodule "quadgrid"]
 	path = quadgrid
-	url = https://github.com/carlodefalco/quadgrid.git
+	url = https://github.com/lucadiprofio/quadgrid.git
 	shallow = true
 [submodule "timer"]
 	path = timer
