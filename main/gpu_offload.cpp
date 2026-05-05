@@ -2,10 +2,12 @@
 #include <map>
 #include <cmath>
 #include <iostream>
+#include <omp.h>
 #include <particles.h>
 #include <quadgrid_cpp.h>
 #include <timer.h>
 #include "mpm_data.h"
+#include "gpu_kernels.h"
 
 using idx_t = quadgrid_t<std::vector<double>>::idx_t;
 cdf::timer::timer_t my_timer{};
@@ -476,94 +478,117 @@ ptcls.dprops["Vp"][ip] = ptcls.dprops["hp"][ip] * ptcls.dprops["Ap"][ip];
 
 	// (8) UPDATE PARTICLE STRESS (USL)
 	my_timer.tic ("step 8");
-
-  for (idx_t ip = 0; ip < num_particles; ++ip)
-    {
-      sig_xx[ip] = 0.0;
-      sig_xy[ip] = 0.0;
-      sig_yy[ip] =  0.0;
+  {
+    // --- Extract raw pointers for GPU mapping ---
+    double* d_vpx     = ptcls.dprops["vpx"].data();
+    double* d_vpy     = ptcls.dprops["vpy"].data();
+    double* d_vpx_dx  = ptcls.dprops["vpx_dx"].data();
+    double* d_vpx_dy  = ptcls.dprops["vpx_dy"].data();
+    double* d_vpy_dx  = ptcls.dprops["vpy_dx"].data();
+    double* d_vpy_dy  = ptcls.dprops["vpy_dy"].data();
+    double* d_hp      = ptcls.dprops["hp"].data();
+    double* d_F11     = ptcls.dprops["F_11"].data();
+    double* d_F12     = ptcls.dprops["F_12"].data();
+    double* d_F21     = ptcls.dprops["F_21"].data();
+    double* d_F22     = ptcls.dprops["F_22"].data();
+    const int np      = ptcls.num_particles;
+    const double rho  = data.rho;
+    const double g    = data.g;
+ 
+    // Bingham model constants (from original code)
+    const double A_coeff  = 3.0 / 2.0;
+    const double C_coeff  = 65.0 / 32.0;
+    const double mu       = 50.0;    // viscosity
+    const double tau_Y    = 2000.0;  // yield stress
+    const double cc       = 0.0;     // stress scaling (0 = off)
+ 
+    #pragma omp target teams distribute parallel for \
+        map(to:     d_vpx[0:np], d_vpy[0:np],              \
+                    d_vpx_dx[0:np], d_vpx_dy[0:np],        \
+                    d_vpy_dx[0:np], d_vpy_dy[0:np],        \
+                    d_hp[0:np])                             \
+        map(tofrom: d_F11[0:np], d_F12[0:np],              \
+                    d_F21[0:np], d_F22[0:np])
+    for (int ip = 0; ip < np; ip++) {
+ 
+      double vx  = d_vpx[ip];
+      double vy  = d_vpy[ip];
+      double hp_val = d_hp[ip];
+ 
+      // Velocity norm
+      double nv = sqrt(vx * vx + vy * vy);
+ 
+      // Depth profile parameter (ZZ=0 in original code)
+      double alf = hp_val > 1.e-3 ?
+        (6.0 * mu * nv) / ((hp_val + 0.001) * tau_Y) : 0.0;
+      double b_val  = -114.0 / 32.0 - alf;
+      double discr  = b_val * b_val - 4.0 * A_coeff * C_coeff;
+      double sq     = sqrt(discr);
+      double z1     = (-b_val + sq) / (2.0 * A_coeff);
+      double z2     = (-b_val - sq) / (2.0 * A_coeff);
+      double zz_val = (fabs(z1 - 0.5) <= 0.5) ? z1 : z2;
+      // NOTE: zz_val is computed but not used below (ZZ=0 in original).
+      // Preserving original behavior: using 0.0 for D_zx, D_zy denom.
+      double zz_use = 0.0;
+ 
+      // 2D strain rate tensor
+      double sxx = d_vpx_dx[ip];
+      double sxy = 0.5 * (d_vpx_dy[ip] + d_vpy_dx[ip]);
+      double syy = d_vpy_dy[ip];
+ 
+      // Full 3D strain rate tensor D (depth-integrated)
+      double Dxx = sxx;
+      double Dxy = sxy;
+      double Dyx = sxy;
+      double Dyy = syy;
+      double Dzz = -(sxx + d_vpy_dy[ip]);
+      double Dzx = hp_val > 1.e-3 ?
+        0.5 * (3.0 / (2.0 + zz_use)) * (vx / (hp_val + 0.001)) : 0.0;
+      double Dzy = hp_val > 1.e-3 ?
+        0.5 * (3.0 / (2.0 + zz_use)) * (vy / (hp_val + 0.001)) : 0.0;
+      double Dxz = 0.0;
+      double Dyz = 0.0;
+ 
+      // Second invariant I_2 = 0.5 * D:D
+      double inv2 = 0.5 * (Dxx*Dxx + Dyy*Dyy + Dzz*Dzz +
+                            Dxz*Dxz + Dyz*Dyz + Dxy*Dxy);
+ 
+      // Bingham stress: sigma = (tau_Y / sqrt(I_2) + 2*mu) * D
+      double coeff = (inv2 != 0.0) ?
+        (tau_Y / sqrt(inv2) + 2.0 * mu) : 0.0;
+      double sigxx = coeff * Dxx;
+      double sigxy = coeff * Dxy;
+      double sigyy = coeff * Dyy;
+ 
+      // Update stress tensor (cc scales Bingham, rest is hydrostatic)
+      d_F11[ip] = cc * sigxx - 0.5 * rho * g * hp_val;
+      d_F12[ip] = cc * sigxy;
+      d_F21[ip] = cc * sigxy;
+      d_F22[ip] = cc * sigyy - 0.5 * rho * g * hp_val;
     }
-
- double double_dot = 0.0;
-
-	for (auto icell = grid.begin_cell_sweep ();
-	     icell != grid.end_cell_sweep (); ++icell)
-          {
-	    for (auto inode = 0; inode < quadgrid_t<std::vector<double>>::cell_t::nodes_per_cell; ++inode)
-	      {
-		auto gv = icell -> gt (inode);
-		if (ptcls.grd_to_ptcl.count (icell->get_global_cell_idx ()) > 0)
-		  for (auto gp = 0; gp < ptcls.grd_to_ptcl.at (icell->get_global_cell_idx ()).size (); ++gp)
-		    {
-
-
-		      auto ip = ptcls.grd_to_ptcl.at(icell->get_global_cell_idx ())[gp];
-          norm_v[ip] = std::sqrt(ptcls.dprops["vpx"][ip] * ptcls.dprops["vpx"][ip] + ptcls.dprops["vpy"][ip] * ptcls.dprops["vpy"][ip] );
-
-          ALF[ip] =ptcls.dprops["hp"][ip] > 1.e-3 ? (6. * 50. * norm_v[ip])/((ptcls.dprops["hp"][ip]+0.001) * 2000.):0.0;
-          B[ip] = -114./32. - ALF[ip];
-          Z1[ip] = (-B[ip] + std::sqrt(B[ip] * B[ip] - 4. * A * C))/(2. * A);
-          Z2[ip] = (-B[ip] - std::sqrt(B[ip] * B[ip] - 4. * A * C))/(2. * A);
-          Z2[ip] = std::abs(Z1[ip] - .5)<=.5 ? Z1[ip] : Z2[ip];
-
-          s_xx[ip] = ptcls.dprops["vpx_dx"][ip];
-          s_xy[ip] = 0.5 * (ptcls.dprops["vpx_dy"][ip] + ptcls.dprops["vpy_dx"][ip]);
-          s_yy[ip] = ptcls.dprops["vpy_dy"][ip];
-
-          D_xx[ip] = s_xx[ip];
-          D_yx[ip] = s_xy[ip];
-          D_zx[ip] = ptcls.dprops["hp"][ip] > 1.e-3 ? 0.5 * (3. / (2. + ZZ[ip])) * (ptcls.dprops["vpx"][ip] / (ptcls.dprops["hp"][ip] + 0.001) ) : 0.0;
-
-          D_xy[ip] = s_xy[ip];
-          D_yy[ip] = s_yy[ip];
-          D_zy[ip] = ptcls.dprops["hp"][ip] > 1.e-3 ? 0.5 * (3. / (2. + ZZ[ip]))  * (ptcls.dprops["vpy"][ip] / (ptcls.dprops["hp"][ip]+ 0.001) ) : 0.0;
-
-          D_xz[ip] =  0.0;//0.0; // 0.5 * (3. / (2. + ZZ[ip])) * (ptcls.dprops["vpx"][ip] / (ptcls.dprops["hp"][ip] + 0.001) );
-          D_yz[ip] =  0.0;// 0.0; // 0.5 * (3. / (2. + ZZ[ip])) * (ptcls.dprops["vpy"][ip] / (ptcls.dprops["hp"][ip]+ 0.001) );
-          D_zz[ip] = - (ptcls.dprops["vpx_dx"][ip] + ptcls.dprops["vpy_dy"][ip] );
-
-          invII[ip] = 0.5 * (D_xx[ip] * D_xx[ip] + D_yy[ip] * D_yy[ip] + D_zz[ip] * D_zz[ip] +
-                      D_xz[ip] * D_xz[ip] + D_yz[ip] * D_yz[ip] + D_xy[ip] * D_xy[ip]);
-
-          sig_xx[ip] = invII[ip] != 0 ? (2000./std::sqrt(invII[ip]) + 2. * 50.) * D_xx[ip] : 0.0;
-          sig_xy[ip] = invII[ip] != 0 ? (2000./std::sqrt(invII[ip]) + 2. * 50.) * D_xy[ip] : 0.0;
-          sig_yy[ip] = invII[ip] != 0 ? (2000./std::sqrt(invII[ip]) + 2. * 50.) * D_yy[ip] : 0.0;
-
-          double cc = 0.0;
-
-		      ptcls.dprops["F_11"][ip] =  cc * sig_xx[ip] - 0.5 * data.rho * data.g *  (ptcls.dprops["hp"][ip]  ) ;
-		      ptcls.dprops["F_12"][ip] =  cc * sig_xy[ip] ;
-		      ptcls.dprops["F_21"][ip] =  cc * sig_xy[ip]  ;
-		      ptcls.dprops["F_22"][ip] =  cc * sig_yy[ip] - 0.5 * data.rho * data.g *   (ptcls.dprops["hp"][ip]    )   ;
-		    }
-	      }
-
-          }
-
-	ptcls.dprops.at("hpZ").assign(ptcls.num_particles, 0.0);
-	ptcls.dprops.at("Zp").assign(ptcls.num_particles, 0.0);
-	ptcls.g2p (vars,std::vector<std::string>{"Z"},
-		   std::vector<std::string>{"Zp"});
-
-	for (auto icell = grid.begin_cell_sweep ();
-	     icell != grid.end_cell_sweep (); ++icell)
-	  {
-	    for (auto inode = 0; inode < quadgrid_t<std::vector<double>>::cell_t::nodes_per_cell; ++inode)
-	      {
-		auto gv = icell -> gt (inode);
-		if (ptcls.grd_to_ptcl.count (icell->get_global_cell_idx ()) > 0)
-		  for (auto gp = 0; gp < ptcls.grd_to_ptcl.at (icell->get_global_cell_idx ()).size (); ++gp)
-		    {
-		      auto ip = ptcls.grd_to_ptcl.at(icell->get_global_cell_idx ())[gp];
-		      ptcls.dprops["hpZ"][ip] = ptcls.dprops["hp"][ip] + ptcls.dprops["Zp"][ip];
-
-		    }
-	      }
-
-	  }
-
-
- my_timer.toc("step 8");
+  }
+ 
+  // hpZ update (g2p call stays on CPU, per-particle update offloaded)
+  ptcls.dprops.at("hpZ").assign(ptcls.num_particles, 0.0);
+  ptcls.dprops.at("Zp").assign(ptcls.num_particles, 0.0);
+  ptcls.g2p (vars,std::vector<std::string>{"Z"},
+       std::vector<std::string>{"Zp"});
+ 
+  {
+    double* d_hpZ = ptcls.dprops["hpZ"].data();
+    double* d_hp  = ptcls.dprops["hp"].data();
+    double* d_Zp  = ptcls.dprops["Zp"].data();
+    const int np  = ptcls.num_particles;
+ 
+    #pragma omp target teams distribute parallel for \
+        map(to: d_hp[0:np], d_Zp[0:np]) \
+        map(from: d_hpZ[0:np])
+    for (int ip = 0; ip < np; ip++) {
+      d_hpZ[ip] = d_hp[ip] + d_Zp[ip];
+    }
+  }
+ 
+  my_timer.toc("step 8");
 
 	        ptcls.p2g (Plotvars,std::vector<std::string>{"Mp","vpx","vpy","apx","apy"},
              std::vector<std::string>{"rho_v","vvx","vvy","avx","avy"},true);
