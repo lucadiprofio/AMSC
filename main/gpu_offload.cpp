@@ -381,100 +381,205 @@ int main ()
 
  my_timer.toc ("step 5");
 
-
-
-	// (6) RETURN TO POINTS (G2P) and UPDATE POS AND VEL ON PARTICLES
+	// (6) G2P + VELOCITY/POSITION UPDATE
+	// Fuses 3 operations into 1 kernel:
+	//   a) G2P: interpolate nodal vvx,vvy,avx,avy onto particles
+	//   b) Velocity update: vpx += dt * apx
+	//   c) Position update: x  += dt * vpx
+	// Each particle reads from its 4 cell nodes (read-only on grid)
+	// and writes only to its own propertiesw so there is no race condition.
 	my_timer.tic ("step 6");
-        ptcls.dprops.at("vpx").assign(ptcls.num_particles, 0.0);
-        ptcls.dprops.at("vpy").assign(ptcls.num_particles, 0.0);
-        ptcls.dprops.at("apx").assign(ptcls.num_particles, 0.0);
-        ptcls.dprops.at("apy").assign(ptcls.num_particles, 0.0);
-
-        ptcls.g2p (vars,std::vector<std::string>{"vvx","vvy","avx","avy"},
-		   std::vector<std::string>{"vpx","vpy","apx","apy"});
-
-
-
-	for (auto icell = grid.begin_cell_sweep ();
-	     icell != grid.end_cell_sweep (); ++icell)
-	  {
-	    for (auto inode = 0; inode < quadgrid_t<std::vector<double>>::cell_t::nodes_per_cell; ++inode)
-	      {
-		if (ptcls.grd_to_ptcl.count (icell->get_global_cell_idx ()) > 0)
-		  for (auto ip = 0; ip < ptcls.grd_to_ptcl.at (icell->get_global_cell_idx ()).size (); ++ip)
-		    {
-		      auto gp = ptcls.grd_to_ptcl.at(icell->get_global_cell_idx ())[ip];
-		      ptcls.dprops["vpx"][gp] += dt * ptcls.dprops["apx"][gp] ;
-		      ptcls.dprops["vpy"][gp] += dt * ptcls.dprops["apy"][gp] ;
-		    }
-	      }
-
+	{
+	  // Extract raw pointers
+	  // Particle data
+	  double* d_x       = ptcls.x.data();
+	  double* d_y       = ptcls.y.data();
+	  double* d_vpx     = ptcls.dprops["vpx"].data();
+	  double* d_vpy     = ptcls.dprops["vpy"].data();
+	  double* d_apx     = ptcls.dprops["apx"].data();
+	  double* d_apy     = ptcls.dprops["apy"].data();
+	  const int* d_p2g  = ptcls.ptcl_to_grd.data();
+ 
+	  // Grid data (read-only for this kernel)
+	  const double* d_vvx = vars["vvx"].data();
+	  const double* d_vvy = vars["vvy"].data();
+	  const double* d_avx = vars["avx"].data();
+	  const double* d_avy = vars["avy"].data();
+ 
+	  const int np    = ptcls.num_particles;
+	  const int nrows = grid.num_rows();
+	  const double hx = grid.hx();
+	  const double hy = grid.hy();
+	  const int nn    = grid.num_global_nodes();
+	  const double dt_local = dt;
+ 
+	  #pragma omp target teams distribute parallel for \
+	      map(to:     d_x[0:np], d_y[0:np], d_p2g[0:np],      \
+	                  d_vvx[0:nn], d_vvy[0:nn],                 \
+	                  d_avx[0:nn], d_avy[0:nn])                 \
+	      map(from:   d_vpx[0:np], d_vpy[0:np],                \
+	                  d_apx[0:np], d_apy[0:np])                 \
+	      map(tofrom: d_x[0:np], d_y[0:np])
+	  for (int ip = 0; ip < np; ip++) {
+	    double xx = d_x[ip];
+	    double yy = d_y[ip];
+	    int cell_idx = d_p2g[ip];
+	    int r = gpu_gind2row(cell_idx, nrows);
+	    int c = gpu_gind2col(cell_idx, nrows);
+ 
+	    // G2P: interpolate nodal values to particle
+	    double vpx_val = 0.0, vpy_val = 0.0;
+	    double apx_val = 0.0, apy_val = 0.0;
+ 
+	    for (int inode = 0; inode < 4; inode++) {
+	      double N    = gpu_shp(xx, yy, inode, c, r, hx, hy);
+	      int    nidx = gpu_gt(inode, c, r, nrows);
+	      vpx_val += N * d_vvx[nidx];
+	      vpy_val += N * d_vvy[nidx];
+	      apx_val += N * d_avx[nidx];
+	      apy_val += N * d_avy[nidx];
+	    }
+ 
+	    // Velocity update: v += dt * a
+	    vpx_val += dt_local * apx_val;
+	    vpy_val += dt_local * apy_val;
+ 
+	    // Store velocities and accelerations
+	    d_vpx[ip] = vpx_val;
+	    d_vpy[ip] = vpy_val;
+	    d_apx[ip] = apx_val;
+	    d_apy[ip] = apy_val;
+ 
+	    // Position update: x += dt * v
+	    d_x[ip] += dt_local * vpx_val;
+	    d_y[ip] += dt_local * vpy_val;
 	  }
-
-
-
-	for (auto icell = grid.begin_cell_sweep ();
-	     icell != grid.end_cell_sweep (); ++icell)
-	  {
-	    for (auto inode = 0; inode < quadgrid_t<std::vector<double>>::cell_t::nodes_per_cell; ++inode)
-	      {
-		if (ptcls.grd_to_ptcl.count (icell->get_global_cell_idx ()) > 0)
-		  for (auto ip = 0; ip < ptcls.grd_to_ptcl.at (icell->get_global_cell_idx ()).size (); ++ip)
-		    {
-		      auto gp = ptcls.grd_to_ptcl.at(icell->get_global_cell_idx ())[ip];
-		      ptcls.x[gp] += dt * ptcls.dprops["vpx"][gp];
-		      ptcls.y[gp] += dt * ptcls.dprops["vpy"][gp];
-		      //  ptcls.dprops["xp"][gp] += dt * ptcls.dprops["vpx"][gp];
-		      //    ptcls.dprops["yp"][gp] += dt * ptcls.dprops["vpy"][gp];
-		    }
-	      }
-
-	  }
+	}
 	my_timer.toc ("step 6");
-
-	// (7) COMPUTE HEIGHT WITH STRAIN (divergence of velocities)
+ 
+	// G2PD + HEIGHT UPDATE — GPU OFFLOADED
+	// Fuses 2 operations into 1 kernel:
+	//   a) G2PD: interpolate velocity gradients onto particles
+	//      (d(vvx)/dx, d(vvx)/dy, d(vvy)/dx, d(vvy)/dy)
+	//   b) Height/area/volume/momentum update using divergence
+	// Each particle reads from its 4 cell nodes (read-only on grid)
+	// and writes only to its own properties so there is no race condition.
 	my_timer.tic ("step 7");
-	ptcls.dprops.at("vpx_dx").assign(ptcls.num_particles, 0.0);
-	ptcls.dprops.at("vpy_dy").assign(ptcls.num_particles, 0.0);
-	ptcls.g2pd (vars,std::vector<std::string>{"vvx","vvy"},
-		    std::vector<std::string>{"vpx_dx","vpy_dx"},
-		    std::vector<std::string>{"vpx_dy","vpy_dy"});
-
-	for (auto icell = grid.begin_cell_sweep ();
-	     icell != grid.end_cell_sweep (); ++icell)
-	  {
-	    for (auto inode = 0; inode < quadgrid_t<std::vector<double>>::cell_t::nodes_per_cell; ++inode)
-	      {
-		if (ptcls.grd_to_ptcl.count (icell->get_global_cell_idx ()) > 0)
-		  for (auto gp = 0; gp < ptcls.grd_to_ptcl.at (icell->get_global_cell_idx ()).size (); ++gp)
-		    {
-		      auto ip = ptcls.grd_to_ptcl.at(icell->get_global_cell_idx ())[gp];
-		      ptcls.dprops["hp"][ip] /= (1+dt * (ptcls.dprops["vpx_dx"][ip] + ptcls.dprops["vpy_dy"][ip]));
-		      ptcls.dprops["mom_px"][ip] = ptcls.dprops["vpx"][ip] * ptcls.dprops["Mp"][ip];
-		      ptcls.dprops["mom_py"][ip] = ptcls.dprops["vpy"][ip] * ptcls.dprops["Mp"][ip];
-		      ptcls.dprops["Ap"][ip]   /=(1+dt * (ptcls.dprops["vpx_dx"][ip] + ptcls.dprops["vpy_dy"][ip]));
-ptcls.dprops["Vp"][ip] = ptcls.dprops["hp"][ip] * ptcls.dprops["Ap"][ip];
-        // ptcls.dprops["Ap"][ip] =  ptcls.dprops["hp"][ip] >= 1.e-2 ? ptcls.dprops["Vp"][ip]/ptcls.dprops["hp"][ip] : ptcls.dprops["hp"][ip]; //     (1+dt * (ptcls.dprops["vpx_dx"][ip] + ptcls.dprops["vpy_dy"][ip])); // ptcls.dprops["Vp"][ip]/ptcls.dprops["hp"][ip]; //ptcls.dprops["Mp"][ip] / (data.rho * ptcls.dprops["hp"][ip]);
-		    }
-	      }
-
+	{
+	  // --- Extract raw pointers ---
+	  const double* d_x   = ptcls.x.data();
+	  const double* d_y   = ptcls.y.data();
+	  const int* d_p2g    = ptcls.ptcl_to_grd.data();
+ 
+	  // Grid data (read-only)
+	  const double* d_vvx = vars["vvx"].data();
+	  const double* d_vvy = vars["vvy"].data();
+ 
+	  // Particle data to update
+	  double* d_vpx_dx  = ptcls.dprops["vpx_dx"].data();
+	  double* d_vpx_dy  = ptcls.dprops["vpx_dy"].data();
+	  double* d_vpy_dx  = ptcls.dprops["vpy_dx"].data();
+	  double* d_vpy_dy  = ptcls.dprops["vpy_dy"].data();
+	  double* d_hp      = ptcls.dprops["hp"].data();
+	  double* d_Ap      = ptcls.dprops["Ap"].data();
+	  double* d_Vp      = ptcls.dprops["Vp"].data();
+	  double* d_mom_px  = ptcls.dprops["mom_px"].data();
+	  double* d_mom_py  = ptcls.dprops["mom_py"].data();
+	  const double* d_vpx = ptcls.dprops["vpx"].data();
+	  const double* d_vpy = ptcls.dprops["vpy"].data();
+	  const double* d_Mp  = ptcls.dprops["Mp"].data();
+ 
+	  const int np    = ptcls.num_particles;
+	  const int nrows = grid.num_rows();
+	  const double hx = grid.hx();
+	  const double hy = grid.hy();
+	  const int nn    = grid.num_global_nodes();
+	  const double dt_local = dt;
+ 
+	  #pragma omp target teams distribute parallel for \
+	      map(to:     d_x[0:np], d_y[0:np], d_p2g[0:np],          \
+	                  d_vvx[0:nn], d_vvy[0:nn],                     \
+	                  d_vpx[0:np], d_vpy[0:np], d_Mp[0:np])         \
+	      map(from:   d_vpx_dx[0:np], d_vpx_dy[0:np],              \
+	                  d_vpy_dx[0:np], d_vpy_dy[0:np],               \
+	                  d_mom_px[0:np], d_mom_py[0:np])                \
+	      map(tofrom: d_hp[0:np], d_Ap[0:np], d_Vp[0:np])
+	  for (int ip = 0; ip < np; ip++) {
+	    double xx = d_x[ip];
+	    double yy = d_y[ip];
+	    int cell_idx = d_p2g[ip];
+	    int r = gpu_gind2row(cell_idx, nrows);
+	    int c = gpu_gind2col(cell_idx, nrows);
+ 
+	    // G2PD: interpolate velocity gradients
+	    double vpx_dx_val = 0.0;
+	    double vpx_dy_val = 0.0;
+	    double vpy_dx_val = 0.0;
+	    double vpy_dy_val = 0.0;
+ 
+	    for (int inode = 0; inode < 4; inode++) {
+	      double Nx   = gpu_shg(xx, yy, 0, inode, c, r, hx, hy);
+	      double Ny   = gpu_shg(xx, yy, 1, inode, c, r, hx, hy);
+	      int    nidx = gpu_gt(inode, c, r, nrows);
+	      vpx_dx_val += Nx * d_vvx[nidx];   // d(vx)/dx
+	      vpx_dy_val += Ny * d_vvx[nidx];   // d(vx)/dy
+	      vpy_dx_val += Nx * d_vvy[nidx];   // d(vy)/dx
+	      vpy_dy_val += Ny * d_vvy[nidx];   // d(vy)/dy
+	    }
+ 
+	    // Store gradients (needed by step 8 for stress computation)
+	    d_vpx_dx[ip] = vpx_dx_val;
+	    d_vpx_dy[ip] = vpx_dy_val;
+	    d_vpy_dx[ip] = vpy_dx_val;
+	    d_vpy_dy[ip] = vpy_dy_val;
+ 
+	    // Height update: h /= (1 + dt * div(v))
+	    double div_v = vpx_dx_val + vpy_dy_val;
+	    double scale = 1.0 + dt_local * div_v;
+	    d_hp[ip] /= scale;
+	    d_Ap[ip] /= scale;
+	    d_Vp[ip]  = d_hp[ip] * d_Ap[ip];
+ 
+	    // Momentum update
+	    d_mom_px[ip] = d_vpx[ip] * d_Mp[ip];
+	    d_mom_py[ip] = d_vpy[ip] * d_Mp[ip];
 	  }
-
-
-
-
+	}
 	my_timer.toc ("step 7");
 
-  for (idx_t ip = 0; ip < num_particles; ++ip)
-    {
-            norm_v[ip] = std::sqrt(ptcls.dprops["vpx"][ip] * ptcls.dprops["vpx"][ip] + ptcls.dprops["vpy"][ip] * ptcls.dprops["vpy"][ip] );
-
-            ptcls.dprops["Fb_x"][ip] = ptcls.dprops["hp"][ip] > 1.e-3 ?  - 0.0 * 2.5 * (  data.rho * ptcls.dprops["hp"][ip] * data.g * std::tan(fric_ang)  +
-                                           data.rho * data.g * ptcls.dprops["vpx"][ip] * ptcls.dprops["vpx"][ip]  / 100.)* ptcls.dprops["vpx"][ip] / (norm_v[ip] + 0.001) : 0.0 ;
-
-            ptcls.dprops["Fb_y"][ip] = ptcls.dprops["hp"][ip] > 1.e-3 ? - 0.0 * 2.5 * (data.rho * ptcls.dprops["hp"][ip] * data.g * std::tan(fric_ang)  +
-                                           data.rho * data.g * ptcls.dprops["vpy"][ip] * ptcls.dprops["vpy"][ip]  / 100.)  * ptcls.dprops["vpy"][ip] / (norm_v[ip] + 0.001) : 0.0 ;
+  // FRICTION COMPUTATION — GPU OFFLOADED (flat particle loop)
+   my_timer.tic ("friction");
+  {
+    double* d_vpx    = ptcls.dprops["vpx"].data();
+    double* d_vpy    = ptcls.dprops["vpy"].data();
+    double* d_hp     = ptcls.dprops["hp"].data();
+    double* d_Fb_x   = ptcls.dprops["Fb_x"].data();
+    double* d_Fb_y   = ptcls.dprops["Fb_y"].data();
+    const int np     = ptcls.num_particles;
+    const double rho = data.rho;
+    const double g   = data.g;
+    const double tan_fa = std::tan(fric_ang);
+ 
+    #pragma omp target teams distribute parallel for \
+        map(to: d_vpx[0:np], d_vpy[0:np], d_hp[0:np]) \
+        map(from: d_Fb_x[0:np], d_Fb_y[0:np])
+    for (int ip = 0; ip < np; ip++) {
+      double vx = d_vpx[ip];
+      double vy = d_vpy[ip];
+      double hp_val = d_hp[ip];
+      double nv = sqrt(vx * vx + vy * vy);
+ 
+      // Voellmy friction (currently scaled by 0.0, structure preserved)
+      d_Fb_x[ip] = hp_val > 1.e-3 ?
+        -0.0 * 2.5 * (rho * hp_val * g * tan_fa +
+                       rho * g * vx * vx / 100.0) * vx / (nv + 0.001) : 0.0;
+ 
+      d_Fb_y[ip] = hp_val > 1.e-3 ?
+        -0.0 * 2.5 * (rho * hp_val * g * tan_fa +
+                       rho * g * vy * vy / 100.0) * vy / (nv + 0.001) : 0.0;
     }
+  }
+  my_timer.toc ("friction");
 
 	// (8) UPDATE PARTICLE STRESS (USL)
 	my_timer.tic ("step 8");
