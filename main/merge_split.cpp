@@ -476,6 +476,8 @@ int main ()
 	my_timer.tic ("step 7");
 	ptcls.dprops.at("vpx_dx").assign(ptcls.num_particles, 0.0);
 	ptcls.dprops.at("vpy_dy").assign(ptcls.num_particles, 0.0);
+  ptcls.dprops.at("vpy_dx").assign(ptcls.num_particles, 0.0);
+  ptcls.dprops.at("vpy_dy").assign(ptcls.num_particles, 0.0);
 	ptcls.g2pd (vars,std::vector<std::string>{"vvx","vvy"},
 		    std::vector<std::string>{"vpx_dx","vpy_dx"},
 		    std::vector<std::string>{"vpx_dy","vpy_dy"});
