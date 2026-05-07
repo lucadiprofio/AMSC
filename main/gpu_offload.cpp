@@ -255,102 +255,128 @@ int main ()
 
 	my_timer.toc ("step 1");
 
-	// (2)  EXTERNAL FORCES ON VERTICES (P2G)
+	// (2) EXTERNAL FORCES — PARTIALLY GPU OFFLOADED
+	//     a) Fric_px/py: per-particle → GPU flat loop
+	//     b) p2g: stays on CPU (race condition)
+	//     c) F_ext: per-node → GPU flat loop
 	my_timer.tic ("step 2");
-	for (auto icell = grid.begin_cell_sweep (); icell != grid.end_cell_sweep (); ++icell)
-	  {
-	    for (auto inode = 0; inode < quadgrid_t<std::vector<double>>::cell_t::nodes_per_cell; ++inode)
-	      {
-		auto gv = icell -> gt (inode);
-   	if (ptcls.grd_to_ptcl.count (icell->get_global_cell_idx ()) > 0)
-		  for (auto ip = 0; ip < ptcls.grd_to_ptcl.at (icell->get_global_cell_idx ()).size (); ++ip)
-		     {
-		      auto gp = ptcls.grd_to_ptcl.at(icell->get_global_cell_idx ())[ip];
-		      ptcls.dprops["Fric_px"][gp] = 0.0 * ptcls.dprops["Ap"][gp] *  ptcls.dprops["Fb_x"][gp]  ; // - ptcls.dprops["Mp"][gp] *    9.81 * ptcls.dprops["dZxp"][gp] + ptcls.dprops["Ap"][gp] * ptcls.dprops["Fb_x"][gp]  ;
-		      ptcls.dprops["Fric_py"][gp] = 0.0 * ptcls.dprops["Ap"][gp] * ptcls.dprops["Fb_y"][gp]  ;//  - ptcls.dprops["Mp"][gp] *    9.81 * ptcls.dprops["dZyp"][gp]  + ptcls.dprops["Ap"][gp] *  ptcls.dprops["Fb_y"][gp]  ;
-		     }
-	     }
-
+ 
+	// (a) Friction per-particle computation — GPU
+	{
+	  double* d_Ap      = ptcls.dprops["Ap"].data();
+	  double* d_Fb_x    = ptcls.dprops["Fb_x"].data();
+	  double* d_Fb_y    = ptcls.dprops["Fb_y"].data();
+	  double* d_Fric_px = ptcls.dprops["Fric_px"].data();
+	  double* d_Fric_py = ptcls.dprops["Fric_py"].data();
+	  const int np = ptcls.num_particles;
+ 
+	  #pragma omp target teams distribute parallel for \
+	      map(to: d_Ap[0:np], d_Fb_x[0:np], d_Fb_y[0:np]) \
+	      map(from: d_Fric_px[0:np], d_Fric_py[0:np])
+	  for (int ip = 0; ip < np; ip++) {
+	    d_Fric_px[ip] = 0.0 * d_Ap[ip] * d_Fb_x[ip];
+	    d_Fric_py[ip] = 0.0 * d_Ap[ip] * d_Fb_y[ip];
 	  }
-
+	}
+ 
+	// (b) P2G: project friction to nodes — stays on CPU (race condition)
 	ptcls.p2g (vars,std::vector<std::string>{"Fric_px","Fric_py"},
 		  std::vector<std::string>{"Fric_x","Fric_y"});
-//    ptcls.p2g (vars,std::vector<std::string>{"Fric_px","Fric_py"},
-//  		   std::vector<std::string>{"F_ext_vx","F_ext_vy"});
-
-	for (auto icell = grid.begin_cell_sweep ();
-             icell != grid.end_cell_sweep (); ++icell)
-	  {
-	    for (auto inode = 0; inode < quadgrid_t<std::vector<double>>::cell_t::nodes_per_cell; ++inode)
-	      {
-		auto gv = icell -> gt (inode);
-
-		vars["F_ext_vx"][gv] = -  vars["Mv"][gv] *  9.81 * 0.0 * vars["dZdx"][gv] + vars["Fric_x"][gv]; // vars["dZdx"][gv]; // vars["dZdx"][gv]; //  dZdx[gv]  ; //-  ptcls.dprops["Ap"][gp] * ptcls.dprops["Fb_x"][gp];
-
-		vars["F_ext_vy"][gv] = -  vars["Mv"][gv] *  9.81 * 0.0 *  vars["dZdy"][gv] + vars["Fric_y"][gv]; // vars["dZdy"][gv]; //  -   ptcls.dprops["Ap"][gp] *  ptcls.dprops["Fb_y"][gp];
-
-	      }
-
+ 
+	// (c) Compute F_ext per-node — GPU flat loop
+	{
+	  double* d_F_ext_vx = vars["F_ext_vx"].data();
+	  double* d_F_ext_vy = vars["F_ext_vy"].data();
+	  const double* d_Mv    = vars["Mv"].data();
+	  const double* d_dZdx  = vars["dZdx"].data();
+	  const double* d_dZdy  = vars["dZdy"].data();
+	  const double* d_Fric_x = vars["Fric_x"].data();
+	  const double* d_Fric_y = vars["Fric_y"].data();
+	  const int nn = grid.num_global_nodes();
+ 
+	  #pragma omp target teams distribute parallel for \
+	      map(to: d_Mv[0:nn], d_dZdx[0:nn], d_dZdy[0:nn], \
+	              d_Fric_x[0:nn], d_Fric_y[0:nn])          \
+	      map(from: d_F_ext_vx[0:nn], d_F_ext_vy[0:nn])
+	  for (int iv = 0; iv < nn; iv++) {
+	    d_F_ext_vx[iv] = - d_Mv[iv] * 9.81 * 0.0 * d_dZdx[iv] + d_Fric_x[iv];
+	    d_F_ext_vy[iv] = - d_Mv[iv] * 9.81 * 0.0 * d_dZdy[iv] + d_Fric_y[iv];
 	  }
-
+	}
+ 
 	my_timer.toc ("step 2");
-
-	// (3) INTERNAL FORCES (p2gd) and MOMENTUM BALANCE
+ 
+	// (3) INTERNAL FORCES + MOMENTUM BALANCE — PARTIALLY GPU OFFLOADED
 	my_timer.tic ("step 3");
+ 
+	// P2GD: internal force assembly — stays on CPU (race condition)
         ptcls.p2gd (vars, std::vector<std::string>{"F_11","F_21"},
 		    std::vector<std::string>{"F_12","F_22"},
 		    "Vp",std::vector<std::string>{"F_int_vx","F_int_vy"});
-
-
-
-	for (auto icell = grid.begin_cell_sweep ();
-	     icell != grid.end_cell_sweep (); ++icell)
-	  {
-            for (auto inode = 0; inode < quadgrid_t<std::vector<double>>::cell_t::nodes_per_cell; ++inode)
-	      {
-		auto iv = icell -> gt (inode);
-		vars["Ftot_vx"][iv] = vars["F_ext_vx"][iv] - vars["F_int_vx"][iv];
-		vars["Ftot_vy"][iv] = vars["F_ext_vy"][iv] - vars["F_int_vy"][iv];
-	      }
-
+ 
+	// Ftot computation + momentum update - GPU flat node loop
+	{
+	  double* d_Ftot_vx  = vars["Ftot_vx"].data();
+	  double* d_Ftot_vy  = vars["Ftot_vy"].data();
+	  double* d_mom_vx   = vars["mom_vx"].data();
+	  double* d_mom_vy   = vars["mom_vy"].data();
+	  const double* d_F_ext_vx = vars["F_ext_vx"].data();
+	  const double* d_F_ext_vy = vars["F_ext_vy"].data();
+	  const double* d_F_int_vx = vars["F_int_vx"].data();
+	  const double* d_F_int_vy = vars["F_int_vy"].data();
+	  const int nn = grid.num_global_nodes();
+	  const double dt_local = dt;
+ 
+	  #pragma omp target teams distribute parallel for \
+	      map(to:     d_F_ext_vx[0:nn], d_F_ext_vy[0:nn], \
+	                  d_F_int_vx[0:nn], d_F_int_vy[0:nn])  \
+	      map(from:   d_Ftot_vx[0:nn], d_Ftot_vy[0:nn])    \
+	      map(tofrom: d_mom_vx[0:nn], d_mom_vy[0:nn])
+	  for (int iv = 0; iv < nn; iv++) {
+	    // Ftot = F_ext - F_int
+	    double ftx = d_F_ext_vx[iv] - d_F_int_vx[iv];
+	    double fty = d_F_ext_vy[iv] - d_F_int_vy[iv];
+	    d_Ftot_vx[iv] = ftx;
+	    d_Ftot_vy[iv] = fty;
+ 
+	    // Momentum update: mom += dt * Ftot
+	    d_mom_vx[iv] += dt_local * ftx;
+	    d_mom_vy[iv] += dt_local * fty;
 	  }
-
-
-
-
-
-        for (auto icell = grid.begin_cell_sweep ();
-             icell != grid.end_cell_sweep (); ++icell)
-	  {
-	    for (auto inode = 0; inode < quadgrid_t<std::vector<double>>::cell_t::nodes_per_cell; ++inode)
-	      {
-		auto iv = icell -> gt (inode);
-		vars["mom_vx"][iv] += dt * vars["Ftot_vx"][iv];
-		vars["mom_vy"][iv] += dt * vars["Ftot_vy"][iv];
-
-	      }
-
-	  }
+	}
+ 
 	my_timer.toc ("step 3");
-
-
-
-	// (4)  COMPUTE NODAL ACCELERATIONS AND VELOCITIES
+ 
+	// (4) NODAL ACCELERATIONS AND VELOCITIES
+	//     Pure per-node computation: a = Ftot/M, v = mom/M
 	my_timer.tic ("step 4");
-	for (auto icell = grid.begin_cell_sweep ();
-	     icell != grid.end_cell_sweep (); ++icell)
-	  {
-	    for (auto inode = 0; inode < quadgrid_t<std::vector<double>>::cell_t::nodes_per_cell; ++inode)
-	      {
-		auto iv = icell -> gt (inode);
-		vars["avx"][iv] = vars["Mv"][iv] > 1e-8 ?  vars["Ftot_vx"][iv] / vars["Mv"][iv] : 0.0;
-		vars["avy"][iv] = vars["Mv"][iv] > 1e-8 ? vars[ "Ftot_vy"][iv] / vars["Mv"][iv] : 0.0;
-
-		vars["vvx"][iv] = vars["Mv"][iv] > 1e-8 ?  vars["mom_vx"][iv] / vars["Mv"][iv] : 0.0;
-		vars["vvy"][iv]= vars["Mv"][iv] > 1e-8 ?  vars["mom_vy"][iv] / vars["Mv"][iv] : 0.0;
-	      }
-
+	{
+	  const double* d_Ftot_vx = vars["Ftot_vx"].data();
+	  const double* d_Ftot_vy = vars["Ftot_vy"].data();
+	  const double* d_mom_vx  = vars["mom_vx"].data();
+	  const double* d_mom_vy  = vars["mom_vy"].data();
+	  const double* d_Mv      = vars["Mv"].data();
+	  double* d_avx = vars["avx"].data();
+	  double* d_avy = vars["avy"].data();
+	  double* d_vvx = vars["vvx"].data();
+	  double* d_vvy = vars["vvy"].data();
+	  const int nn = grid.num_global_nodes();
+ 
+	  #pragma omp target teams distribute parallel for \
+	      map(to:   d_Ftot_vx[0:nn], d_Ftot_vy[0:nn], \
+	                d_mom_vx[0:nn], d_mom_vy[0:nn],    \
+	                d_Mv[0:nn])                         \
+	      map(from: d_avx[0:nn], d_avy[0:nn],          \
+	                d_vvx[0:nn], d_vvy[0:nn])
+	  for (int iv = 0; iv < nn; iv++) {
+	    double mv = d_Mv[iv];
+	    bool active = mv > 1e-8;
+	    d_avx[iv] = active ? d_Ftot_vx[iv] / mv : 0.0;
+	    d_avy[iv] = active ? d_Ftot_vy[iv] / mv : 0.0;
+	    d_vvx[iv] = active ? d_mom_vx[iv]  / mv : 0.0;
+	    d_vvy[iv] = active ? d_mom_vy[iv]  / mv : 0.0;
 	  }
+	}
 	my_timer.toc ("step 4");
 
   // (5) BOUNDARY CONDITIONS - TO DO
