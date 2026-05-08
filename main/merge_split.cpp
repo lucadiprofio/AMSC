@@ -459,13 +459,15 @@ int main() {
 
     my_timer.toc("step 6");
 
-    // (7) COMPUTE HEIGHT WITH STRAIN (divergence of velocities)
-    my_timer.tic("step 7");
-    ptcls.dprops.at("vpx_dx").assign(ptcls.num_particles, 0.0);
-    ptcls.dprops.at("vpy_dy").assign(ptcls.num_particles, 0.0);
-    ptcls.g2pd(vars, std::vector<std::string>{"vvx", "vvy"},
-               std::vector<std::string>{"vpx_dx", "vpy_dx"},
-               std::vector<std::string>{"vpx_dy", "vpy_dy"});
+	// (7) COMPUTE HEIGHT WITH STRAIN (divergence of velocities)
+	my_timer.tic ("step 7");
+	ptcls.dprops.at("vpx_dx").assign(ptcls.num_particles, 0.0);
+	ptcls.dprops.at("vpy_dy").assign(ptcls.num_particles, 0.0);
+  ptcls.dprops.at("vpy_dx").assign(ptcls.num_particles, 0.0);
+  ptcls.dprops.at("vpy_dy").assign(ptcls.num_particles, 0.0);
+	ptcls.g2pd (vars,std::vector<std::string>{"vvx","vvy"},
+		    std::vector<std::string>{"vpx_dx","vpy_dx"},
+		    std::vector<std::string>{"vpx_dy","vpy_dy"});
 
     for (auto icell = grid.begin_cell_sweep(); icell != grid.end_cell_sweep();
          ++icell) {
