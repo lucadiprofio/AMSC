@@ -158,7 +158,7 @@ int main ()
 
     dt = 1.0e-5;
     std::vector<idx_t> ordering (ptcls.num_particles);
-    while (t < data.T) //data.T;
+    while (t < data.T ) //data.T;
         {
 
   	my_timer.tic ("update dt");
@@ -565,6 +565,19 @@ ptcls.dprops["Vp"][ip] = ptcls.dprops["hp"][ip] * ptcls.dprops["Ap"][ip];
 
 	  }
 
+    if (it <= 3) {
+      double sum_Mv = 0, max_vpx = 0, max_Fint = 0, max_hp = 0;
+      for (int i = 0; i < grid.num_global_nodes(); i++) sum_Mv += vars["Mv"][i];
+      for (int i = 0; i < num_particles; i++) {
+        if (std::abs(ptcls.dprops["vpx"][i]) > max_vpx) max_vpx = std::abs(ptcls.dprops["vpx"][i]);
+        if (ptcls.dprops["hp"][i] > max_hp) max_hp = ptcls.dprops["hp"][i];
+      }
+      for (int i = 0; i < grid.num_global_nodes(); i++)
+        if (std::abs(vars["F_int_vx"][i]) > max_Fint) max_Fint = std::abs(vars["F_int_vx"][i]);
+      std::cout << "[DIAG it=" << it << "] sum_Mv=" << sum_Mv
+                << " max_vpx=" << max_vpx << " max_Fint=" << max_Fint
+                << " max_hp=" << max_hp << std::endl;
+    }
 
  my_timer.toc("step 8");
 
