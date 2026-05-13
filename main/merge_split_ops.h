@@ -40,16 +40,28 @@ inline bool is_extensive(const std::string &name) {
 
 struct conservation_check {
   double total_mass, total_momx, total_momy;
-  int num_particles;
+  particles_t::idx_t num_particles;
 };
 
 inline conservation_check compute_conservation(const particles_t &ptcls) {
-  conservation_check cc{0.0, 0.0, 0.0, static_cast<int>(ptcls.num_particles)};
-  for (particles_t::idx_t i = 0; i < ptcls.num_particles; ++i) {
-    cc.total_mass += ptcls.dprops.at("Mp")[i];
-    cc.total_momx += ptcls.dprops.at("mom_px")[i];
-    cc.total_momy += ptcls.dprops.at("mom_py")[i];
+  conservation_check cc{0.0, 0.0, 0.0, ptcls.num_particles};
+  particles_t::idx_t N = ptcls.num_particles;
+  double t_mass = 0.0, t_momx = 0.0, t_momy = 0.0;
+
+  const double* Mps = ptcls.dprops.at("Mp").data();
+  const double* mom_pxs = ptcls.dprops.at("mom_px").data();
+  const double* mom_pys = ptcls.dprops.at("mom_py").data();
+  #pragma omp target teams distribute parallel for \
+    map(to: Mps[0:N], mom_pxs[0:N], mom_pys[0:N]) \
+    reduction(+: t_mass, t_momx, t_momy)
+  for (particles_t::idx_t i = 0; i < N; ++i) {
+    t_mass += Mps[i];
+    t_momx += mom_pxs[i];
+    t_momy += mom_pys[i];
   }
+  cc.total_mass = t_mass;
+  cc.total_momx = t_momx;
+  cc.total_momy = t_momy;
   return cc;
 }
 
@@ -60,26 +72,6 @@ inline void print_conservation(const std::string &label,
             << "  momy=" << cc.total_momy << std::endl;
 }
 
-// Single-particle data (AoS view, used only in cold-path
-// rebuild; not in hot compute kernels)
-struct particle_data {
-  double px, py;
-  std::map<std::string, double> dp;
-  std::map<std::string, particles_t::idx_t> ip;
-};
-
-inline particle_data extract_particle(const particles_t &ptcls,
-                                      particles_t::idx_t i) {
-  particle_data p;
-  p.px = ptcls.x[i];
-  p.py = ptcls.y[i];
-  for (auto &[key, vec] : ptcls.dprops)
-    p.dp[key] = vec[i];
-  for (auto &[key, vec] : ptcls.iprops)
-    p.ip[key] = vec[i];
-  return p;
-}
-
 /// @brief Mark cells that are genuinely exterior to the fluid.
 ///
 /// Criteria: only empty cells reachable from the grid edge
@@ -87,45 +79,62 @@ inline particle_data extract_particle(const particles_t &ptcls,
 /// Internal holes (empty cells surrounded by fluid) are NOT marked,
 /// preventing false boundary detection.
 inline void mark_exterior_cells(const particles_t &ptcls,
-                                std::vector<bool> &is_exterior) {
-
+                                std::vector<char> &is_exterior) {
   using idx_t = particles_t::idx_t;
+
   const idx_t nrows = ptcls.grid.num_rows();
   const idx_t ncols = ptcls.grid.num_cols();
   const int ncells = nrows * ncols;
 
   auto flat_idx = [&](idx_t r, idx_t c) -> int { return r + nrows * c; };
 
-  // TODO: generalize the double cycle following
-  // auto explore_cells
-
   // identify cells with particles
-  std::vector<bool> has_particles(ncells, false);
+  std::vector<char> has_particles(ncells, 0);
   for (auto const &[cell_idx, ptcl_list] : ptcls.grd_to_ptcl)
     if (!ptcl_list.empty())
-      has_particles[cell_idx] = true;
+      has_particles[cell_idx] = 1;
 
   // flood-fill bfs from grid boundary through empty cells
-  is_exterior.assign(ncells, false);
+  is_exterior.assign(ncells, 0);
   std::queue<int> q;
 
   // Seed: empty cells on the grid boundary
+  for (idx_t c = 0; c < ncols; ++c) {
+    for (idx_t r : {0, nrows - 1}) {
+      int idx = flat_idx(r, c);
+      if (!has_particles[idx] && !is_exterior[idx]) {
+        is_exterior[idx] = 1;
+        q.push(idx);
+      }
+    }
+  }
+  for (idx_t r = 0; r < nrows; ++r) {
+    for (idx_t c : {0, ncols - 1}) {
+      int idx = flat_idx(r, c);
+      if (!has_particles[idx] && !is_exterior[idx]) {
+        is_exterior[idx] = 1;
+        q.push(idx);
+      }
+    }
+  }
+  // rewriting the previous loop
+  /*
   for (idx_t c = 0; c < ncols; ++c) {
     for (idx_t r = 0; r < nrows; ++r) {
       if (r == 0 || r == nrows - 1 || c == 0 || c == ncols - 1) {
         int idx = flat_idx(r, c);
         if (!has_particles[idx] && !is_exterior[idx]) {
-          is_exterior[idx] = true;
+          is_exterior[idx] = 1;
           q.push(idx);
         }
       }
     }
   }
+  */
 
-  // TODO: here maybe is sufficient to consider only 4 cells and not 8
   // propagate only through empty cells
-  const int dr[] = {-1, 0, 1, -1, 1, -1, 0, 1};
-  const int dc[] = {-1, -1, -1, 0, 0, 1, 1, 1};
+  const int dr[] = {-1, 1, 0, 0};
+  const int dc[] = {0, 0, -1, 1};
 
   while (!q.empty()) {
     int cidx = q.front();
@@ -134,7 +143,7 @@ inline void mark_exterior_cells(const particles_t &ptcls,
     idx_t c = cidx / nrows;
 
     // "around cell"
-    for (int k = 0; k < 8; ++k) {
+    for (int k = 0; k < 4; ++k) {
       int nr = static_cast<int>(r) + dr[k];
       int nc = static_cast<int>(c) + dc[k];
       if (nr < 0 || nr >= static_cast<int>(nrows) || nc < 0 ||
@@ -142,7 +151,7 @@ inline void mark_exterior_cells(const particles_t &ptcls,
         continue;
       int nidx = flat_idx(nr, nc);
       if (!has_particles[nidx] && !is_exterior[nidx]) {
-        is_exterior[nidx] = true;
+        is_exterior[nidx] = 1;
         q.push(nidx);
       }
     }
@@ -154,14 +163,14 @@ inline void mark_exterior_cells(const particles_t &ptcls,
 /// The fluid boundary is the interface between wet cells (with
 /// particles) and exterior cells (identified by mark_exterior_cells).
 inline void compute_boundary_distance(const particles_t &ptcls,
-                                      const std::vector<bool> &is_exterior,
+                                      const std::vector<char> &is_exterior,
                                       std::vector<double> &cell_dist) {
-
   using idx_t = particles_t::idx_t;
+
   const idx_t nrows = ptcls.grid.num_rows();
   const idx_t ncols = ptcls.grid.num_cols();
-  const double h = std::min(ptcls.grid.hx(), ptcls.grid.hy());
   const int ncells = nrows * ncols;
+  const double h = std::min(ptcls.grid.hx(), ptcls.grid.hy());
 
   // infinity via standard library
   constexpr double INF = std::numeric_limits<double>::max();
@@ -170,10 +179,10 @@ inline void compute_boundary_distance(const particles_t &ptcls,
   auto flat_idx = [&](idx_t r, idx_t c) -> int { return r + nrows * c; };
 
   // Identify cells with particles
-  std::vector<bool> has_particles(ncells, false);
+  std::vector<char> has_particles(ncells, 0);
   for (auto const &[cell_idx, ptcl_list] : ptcls.grd_to_ptcl)
     if (!ptcl_list.empty())
-      has_particles[cell_idx] = true;
+      has_particles[cell_idx] = 1;
 
   // (cell_index, distance_in_cells)
   std::queue<std::pair<int, int>> bfs;
@@ -241,38 +250,47 @@ inline void compute_boundary_distance(const particles_t &ptcls,
 // the particle position to the nearest exterior cell edge.
 inline void compute_elfs(const particles_t &ptcls,
                          const std::vector<double> &cell_dist,
-                         const std::vector<bool> &is_exterior,
+                         const std::vector<char> &is_exterior,
                          std::vector<double> &elfs_values) {
-
   using idx_t = particles_t::idx_t;
+
   const idx_t nrows = ptcls.grid.num_rows();
   const idx_t ncols = ptcls.grid.num_cols();
+  const int ncells = nrows * ncols;
+
   const double hx = ptcls.grid.hx();
   const double hy = ptcls.grid.hy();
   const double refine_threshold = std::max(hx, hy);
 
-  elfs_values.resize(ptcls.num_particles);
+  const idx_t N_p = ptcls.num_particles;
+  elfs_values.resize(N_p);
+  
+  const auto* ptcl_cell = ptcls.ptcl_to_grd.data();
+  const double* dist = cell_dist.data();
+  const char* ext = is_exterior.data();
+  double* elfs = elfs_values.data();
+  
+  const double* px_ptr = ptcls.x.data();
+  const double* py_ptr = ptcls.y.data();
+  #pragma omp target teams distribute parallel for \
+    map(to: px_ptr[0:N_p], py_ptr[0:N_p], ptcl_cell[0:N_p], dist[0:ncells], ext[0:ncells]) \
+    map(tofrom: elfs[0:N_p])
+  for (idx_t ip = 0; ip < N_p; ++ip) {
+    int cell = ptcl_cell[ip];
+    double base = dist[cell];
 
-  for (idx_t ip = 0; ip < ptcls.num_particles; ++ip) {
-    int cell = ptcls.ptcl_to_grd[ip];
-    double base = cell_dist[cell];
-
-    // If far at least by one cell from boundary,
-    // we assume that cell-level approx is good enough
     if (base > refine_threshold) {
-      elfs_values[ip] = base;
+      elfs[ip] = base;
       continue;
     }
 
-    // refine: min Euclidean distance to any exterior cell edge
-    double px = ptcls.x[ip];
-    double py = ptcls.y[ip];
+    double px = px_ptr[ip];
+    double py = py_ptr[ip];
     double min_dist = base;
 
     idx_t r0 = cell % nrows;
     idx_t c0 = cell / nrows;
 
-    // search in a small neighborhood around the particle's cell
     constexpr int radius = 2;
     for (int dr = -radius; dr <= radius; ++dr) {
       for (int dc = -radius; dc <= radius; ++dc) {
@@ -283,26 +301,27 @@ inline void compute_elfs(const particles_t &ptcls,
           continue;
 
         int nidx = r + nrows * c;
-        if (!is_exterior[nidx])
+        if (!ext[nidx])
           continue;
 
-        // closest point on this exterior cell's bounding box
+          // closest point on this exterior cell's bounding box
         double cx_lo = c * hx, cx_hi = (c + 1) * hx;
         double cy_lo = r * hy, cy_hi = (r + 1) * hy;
 
         // clamp px and py, of the wet cell, to the exterior cell bounding box
-        double nearest_x = std::clamp(px, cx_lo, cx_hi);
-        double nearest_y = std::clamp(py, cy_lo, cy_hi);
+        // removing usage of std::clamp for now (don't know if gpu supports it)
+        double nearest_x = px < cx_lo ? cx_lo : (px > cx_hi ? cx_hi : px);
+        double nearest_y = py < cy_lo ? cy_lo : (py > cy_hi ? cy_hi : py);
 
         double dx = px - nearest_x;
         double dy = py - nearest_y;
         double d = std::sqrt(dx * dx + dy * dy);
 
-        min_dist = std::min(min_dist, d);
+        // same siutation as std::clamp case
+        if (d < min_dist) min_dist = d;
       }
     }
-
-    elfs_values[ip] = min_dist;
+    elfs[ip] = min_dist;
   }
 }
 
@@ -316,21 +335,53 @@ inline void decide_actions(const particles_t &ptcls,
                            const std::vector<double> &elfs_values,
                            const ms_config &cfg, std::vector<action_t> &actions,
                            std::vector<idx_t> &merge_partner) {
+  // comodity variables
+  double alpha = cfg.alpha;
+  double beta = cfg.beta;
+  int min_level = cfg.min_level;
+  int max_level = cfg.max_level;
+  
+  const double hx = ptcls.grid.hx();
+  const double hy = ptcls.grid.hy();
+  const double min_h = std::min(hx, hy);
+  const int ncols = ptcls.grid.num_cols();
+  const int nrows = ptcls.grid.num_rows();
 
   const idx_t N_p = ptcls.num_particles;
-
   actions.assign(N_p, KEEP);
   merge_partner.assign(N_p, -1);
 
-  const std::vector<double> &Ap_vec = ptcls.dprops.at("Ap");
+
+  // pointers to exploit openmp offloading.
+  // This is the best way to handle large amount of data on the gpu
+  const double* Ap_vec = ptcls.dprops.at("Ap").data();
+  const double* elfs = elfs_values.data();
+  action_t* act = actions.data();
+  const idx_t* level_vec = ptcls.iprops.at("level").data();
+  const double* px = ptcls.x.data();
+  const double* py = ptcls.y.data();
+  #pragma omp target teams distribute parallel for \
+    map(to: Ap_vec[0:N_p], elfs[0:N_p], level_vec[0:N_p], px[0:N_p], py[0:N_p]) \
+    map(tofrom: act[0:N_p])
   for (idx_t ip = 0; ip < N_p; ++ip) {
     const double r_i = std::sqrt(Ap_vec[ip]);
-    const double elfs_i = elfs_values[ip];
+    const double elfs_i = elfs[ip];
 
-    if (elfs_i < cfg.alpha * r_i) {
-      actions[ip] = SPLIT;
-    } else if (elfs_i > cfg.beta * r_i) {
-      actions[ip] = MERGE_PRIMARY;
+    if (elfs_i < alpha * r_i) {
+      if (level_vec[ip] > min_level) {
+        double offset_dist = r_i / (2.0 * min_h);
+        double x1 = px[ip] - offset_dist, x2 = px[ip] + offset_dist;
+        double y1 = py[ip] - offset_dist, y2 = py[ip] + offset_dist;
+        
+        if ((x1 >= 1e-10 && x2 <= ncols * hx - 1e-10) ||
+            (y1 >= 1e-10 && y2 <= nrows * hy - 1e-10)) {
+          act[ip] = SPLIT;
+        }
+      }
+    } else if (elfs_i > beta * r_i) {
+      if (level_vec[ip] < max_level) {
+        act[ip] = MERGE_PRIMARY;
+      }
     }
     // else: KEEP
   }
@@ -344,11 +395,11 @@ inline void decide_actions(const particles_t &ptcls,
     for (auto pidx : ptcl_list) {
       if (actions[pidx] == SPLIT) {
         if (n_splits < cfg.max_ops)
-          ++n_splits;
+        ++n_splits;
         else
           actions[pidx] = KEEP; // cap reached
       }
-    }
+  }
 
     // Collect merge candidates in this cell
     std::vector<idx_t> candidates;
@@ -384,12 +435,12 @@ inline void decide_actions(const particles_t &ptcls,
       }
 
       if (best_j < candidates.size()) {
-        idx_t i2 = candidates[best_j];
-        actions[i1] = MERGE_PRIMARY;
-        actions[i2] = MERGE_SECONDARY;
-        merge_partner[i1] = i2;
-        paired[i] = true;
-        paired[best_j] = true;
+          idx_t i2 = candidates[best_j];
+          actions[i1] = MERGE_PRIMARY;
+          actions[i2] = MERGE_SECONDARY;
+          merge_partner[i1] = i2;
+          paired[i] = true;
+          paired[best_j] = true;
         ++n_merges;
       } else {
         actions[i1] = KEEP; // no partner found
@@ -398,10 +449,19 @@ inline void decide_actions(const particles_t &ptcls,
 
     // Remaining unpaired candidates → demote to KEEP
     for (std::size_t i = 0; i < candidates.size(); ++i) {
-      if (!paired[i])
-        actions[candidates[i]] = KEEP;
+      if (!paired[i]) actions[candidates[i]] = KEEP;
     }
   }
+
+  // // 4. Sanitize: Ensure no MERGE_PRIMARY is left without a partner!
+  // // This prevents SegFaults if a particle was marked MERGE_PRIMARY by the GPU
+  // // but wasn't processed by the CPU (e.g., if it's out of grid bounds / not in grd_to_ptcl).
+  // #pragma omp parallel for schedule(static)
+  // for (idx_t i = 0; i < N_p; ++i) {
+  //   if (actions[i] == MERGE_PRIMARY && merge_partner[i] < 0) {
+  //     actions[i] = KEEP;
+  //   }
+  // }
 
   std::cerr << "  [decide] splits=" << n_splits << "  merges=" << n_merges
             << std::endl;
@@ -418,172 +478,190 @@ inline void execute_merge_split(particles_t &ptcls,
   auto cc_before = compute_conservation(ptcls);
   print_conservation("BEFORE merge/split", cc_before);
 
-  // Estimate output size
-  int est = 0;
+  // estimate the new size and save offsets to parallelize the loop
+  std::vector<int> offsets(N_p, 0);
+  const int weights[] = {1, 2, 1, 0};
+  
+  int exact_est = 0;
+  // rearrange the arithmetic to avoid branch in the loop
+  // using prefix-sum (scan) technique also for subsequent offloading...
   for (idx_t i = 0; i < N_p; ++i) {
-    if (actions[i] == SPLIT)
-      est += 2;
-    else if (actions[i] == MERGE_SECONDARY)
-      est += 0;
-    else
-      est += 1;
+    offsets[i] = exact_est;
+    exact_est += weights[static_cast<int>(actions[i])];
+  }
+  // thanks to this loop we know exaclty the final size of the arrays and the positions of each particle in the new arrays
+
+  // allocate new arrays
+  std::vector<double> new_x(exact_est), new_y(exact_est);
+
+  std::vector<std::string> dp_keys, ip_keys;
+  // parallelizing these loops is not necessary since there are only very few properties
+  for (auto const &[key, vec] : ptcls.dprops) dp_keys.push_back(key);
+  for (auto const &[key, vec] : ptcls.iprops) ip_keys.push_back(key);
+
+  std::vector<std::vector<double>> new_dp(dp_keys.size());
+  for (auto &property : new_dp) property.resize(exact_est);
+  std::vector<std::vector<idx_t>> new_ip(ip_keys.size());
+  for (auto &property : new_ip) property.resize(exact_est);
+
+  // prepare data pointers for openmp offloading
+  int num_dp = dp_keys.size();
+  std::vector<const double*> in_dp_ptrs(num_dp);
+  std::vector<double*> out_dp_ptrs(num_dp);
+
+  // the function already defined is not gpu friendly
+  std::vector<int> is_ext(num_dp, 0);
+
+  // mapping of dprops to avoid the lookup in the map (slow)
+  enum DP_ID { e_Mp = 0, e_vpx, e_vpy, e_xp, e_yp, e_mom_px, e_mom_py, e_Ap, e_DP_NUM };
+  const std::string dp_names[] = {"Mp", "vpx", "vpy", "xp", "yp", "mom_px", "mom_py", "Ap"};
+  int dp_idx[e_DP_NUM] = {-1, -1, -1, -1, -1, -1, -1, -1};
+
+  // for each property, store its pointer
+  for (int k = 0; k < num_dp; ++k) {
+    // few iterations here, map lookup not a bottleneck
+    in_dp_ptrs[k] = ptcls.dprops.at(dp_keys[k]).data();
+    out_dp_ptrs[k] = new_dp[k].data();
+    if (is_extensive(dp_keys[k])) is_ext[k] = 1;
+    
+
+    for (int e = 0; e < e_DP_NUM; ++e) {
+      if (dp_keys[k] == dp_names[e]) dp_idx[e] = k;
+    }
+  }
+
+  int num_ip = ip_keys.size();
+  std::vector<const idx_t*> in_ip_ptrs(num_ip);
+  std::vector<idx_t*> out_ip_ptrs(num_ip);
+  
+  // mapping of iprops
+  enum IP_ID { e_level = 0, e_label, e_IP_NUM };
+  const std::string ip_names[] = {"level", "label"};
+  int ip_idx[e_IP_NUM] = {-1, -1};
+
+  for (int k = 0; k < num_ip; ++k) {
+    in_ip_ptrs[k] = ptcls.iprops.at(ip_keys[k]).data();
+    out_ip_ptrs[k] = new_ip[k].data();
+    
+
+    for (int e = 0; e < e_IP_NUM; ++e) {
+      if (ip_keys[k] == ip_names[e]) ip_idx[e] = k;
+    }
   }
 
   // start ops
-  std::vector<double> new_x, new_y;
-  new_x.reserve(est);
-  new_y.reserve(est);
+  const double hx = ptcls.grid.hx();
+  const double hy = ptcls.grid.hy();
+  const double min_h = std::min(hx, hy);
+  const int ncols = ptcls.grid.num_cols();
 
-  std::vector<std::string> dp_keys, ip_keys;
-  for (auto &[key, vec] : ptcls.dprops)
-    dp_keys.push_back(key);
-  for (auto &[key, vec] : ptcls.iprops)
-    ip_keys.push_back(key);
-  std::vector<std::vector<double>> new_dp(dp_keys.size());
-  std::vector<std::vector<idx_t>> new_ip(ip_keys.size());
-  for (std::size_t k = 0; k < dp_keys.size(); ++k)
-    new_dp[k].reserve(est);
-  for (std::size_t k = 0; k < ip_keys.size(); ++k)
-    new_ip[k].reserve(est);
-
-  // lambda: push a particle_data into the new arrays
-  auto add_particle = [&](const particle_data &p) {
-    new_x.push_back(p.px);
-    new_y.push_back(p.py);
-    for (std::size_t k = 0; k < dp_keys.size(); ++k)
-      new_dp[k].push_back(p.dp.at(dp_keys[k]));
-    for (std::size_t k = 0; k < ip_keys.size(); ++k)
-      new_ip[k].push_back(p.ip.at(ip_keys[k]));
-  };
-
+#pragma omp parallel for schedule(guided)
   for (idx_t i = 0; i < N_p; ++i) {
+    if (actions[i] == KEEP) {
+      int out = offsets[i];
 
-    switch (actions[i]) {
+      new_x[out] = ptcls.x[i];
+      new_y[out] = ptcls.y[i];
+      for (int k = 0; k < num_dp; ++k) out_dp_ptrs[k][out] = in_dp_ptrs[k][i];
+      for (int k = 0; k < num_ip; ++k) out_ip_ptrs[k][out] = in_ip_ptrs[k][i];
+    } else if (actions[i] == SPLIT) {
+      int out1 = offsets[i];
+      int out2 = offsets[i] + 1;
+      idx_t level = in_ip_ptrs[ip_idx[e_level]][i];
+      
+      double px = ptcls.x[i];
+      double py = ptcls.y[i];
+      double r_i = std::sqrt(in_dp_ptrs[dp_idx[e_Ap]][i]);
+      double offset_dist = r_i / (2.0 * min_h);
 
-    case KEEP: {
-      add_particle(extract_particle(ptcls, i));
-      break;
-    }
-
-    case SPLIT: {
-      particle_data mother = extract_particle(ptcls, i);
-
-      if (mother.ip.at("level") <= cfg.min_level) {
-        add_particle(mother); // keep unchanged
-        break;
-      }
-
-      // Per-particle split distance: d = r_i / (2h)
-      const double r_i = std::sqrt(mother.dp.at("Ap"));
-      const double offset =
-          r_i / (2.0 * std::min(ptcls.grid.hx(), ptcls.grid.hy()));
-
-      double x1 = mother.px - offset, x2 = mother.px + offset;
-      double y1 = mother.py, y2 = mother.py;
+      double x1 = px - offset_dist, x2 = px + offset_dist;
+      double y1 = py, y2 = py;
 
       // If horizontal split goes out of bounds, try vertical
-      const double xmin = 0.0;
-      const double xmax = ptcls.grid.num_cols() * ptcls.grid.hx();
-      if (x1 < xmin + 1e-10 || x2 > xmax - 1e-10) {
-        x1 = mother.px;
-        x2 = mother.px;
-        y1 = mother.py - offset;
-        y2 = mother.py + offset;
+      if (x1 < 1e-10 || x2 > ncols * hx - 1e-10) {
+        x1 = px; x2 = px;
+        y1 = py - offset_dist; y2 = py + offset_dist;
+      }
 
-        const double ymin = 0.0;
-        const double ymax = ptcls.grid.num_rows() * ptcls.grid.hy();
-        if (y1 < ymin + 1e-10 || y2 > ymax - 1e-10) {
-          add_particle(mother); // give up, keep unchanged since no enough space
-          break;
+      // // Clamp coordinates to grid bounds to prevent floating point inaccuracies
+      // // from artificially pushing a particle outside the simulation domain
+      // x1 = std::max(1e-10, std::min(ncols * hx - 1e-10, x1));
+      // x2 = std::max(1e-10, std::min(ncols * hx - 1e-10, x2));
+      // y1 = std::max(1e-10, std::min(nrows * hy - 1e-10, y1));
+      // y2 = std::max(1e-10, std::min(nrows * hy - 1e-10, y2));
+
+      new_x[out1] = x1; new_y[out1] = y1;
+      new_x[out2] = x2; new_y[out2] = y2;
+
+      // Copy all properties to children (halving extensive ones)
+      for (int k = 0; k < num_dp; ++k) {
+        double val = in_dp_ptrs[k][i] / (is_ext[k] ? 2.0 : 1.0);
+        out_dp_ptrs[k][out1] = val;
+        out_dp_ptrs[k][out2] = val;
+      }
+      for (int k = 0; k < num_ip; ++k) {
+        out_ip_ptrs[k][out1] = in_ip_ptrs[k][i];
+        out_ip_ptrs[k][out2] = in_ip_ptrs[k][i];
+      }
+
+      // helper functions to update specific physical properties
+      auto set_dp = [&](int e, double v1, double v2) { if (dp_idx[e] >= 0) { out_dp_ptrs[dp_idx[e]][out1] = v1; out_dp_ptrs[dp_idx[e]][out2] = v2; } };
+      auto set_ip = [&](int e, idx_t v1, idx_t v2)   { if (ip_idx[e] >= 0) { out_ip_ptrs[ip_idx[e]][out1] = v1; out_ip_ptrs[ip_idx[e]][out2] = v2; } };
+
+      set_dp(e_xp, x1, x2);
+      set_dp(e_yp, y1, y2);
+      
+      if (dp_idx[e_mom_px] >= 0) {
+        double p1 = out_dp_ptrs[dp_idx[e_Mp]][out1] * out_dp_ptrs[dp_idx[e_vpx]][out1];
+        double p2 = out_dp_ptrs[dp_idx[e_Mp]][out2] * out_dp_ptrs[dp_idx[e_vpx]][out2];
+        set_dp(e_mom_px, p1, p2);
+      }
+      if (dp_idx[e_mom_py] >= 0) {
+        double p1 = out_dp_ptrs[dp_idx[e_Mp]][out1] * out_dp_ptrs[dp_idx[e_vpy]][out1];
+        double p2 = out_dp_ptrs[dp_idx[e_Mp]][out2] * out_dp_ptrs[dp_idx[e_vpy]][out2];
+        set_dp(e_mom_py, p1, p2);
+      }
+
+      set_ip(e_level, level - 1, level - 1);
+      set_ip(e_label, -1, -1);
+
+    } else if (actions[i] == MERGE_PRIMARY) {
+      int j = merge_partner[i];
+      int out = offsets[i];
+      idx_t level = in_ip_ptrs[ip_idx[e_level]][i];
+      
+      double M1 = in_dp_ptrs[dp_idx[e_Mp]][i];
+      double M2 = in_dp_ptrs[dp_idx[e_Mp]][j];
+      double Mtot = M1 + M2;
+
+      new_x[out] = (M1 * ptcls.x[i] + M2 * ptcls.x[j]) / Mtot;
+      new_y[out] = (M1 * ptcls.y[i] + M2 * ptcls.y[j]) / Mtot;
+
+      for (int k = 0; k < num_dp; ++k) {
+        if (is_ext[k]) {
+          out_dp_ptrs[k][out] = in_dp_ptrs[k][i] + in_dp_ptrs[k][j];
+        } else {
+          out_dp_ptrs[k][out] = (M1 * in_dp_ptrs[k][i] + M2 * in_dp_ptrs[k][j]) / Mtot;
         }
       }
-
-      idx_t daughter_level = mother.ip.at("level") - 1;
-
-      particle_data d1 = mother;
-      d1.px = x1;
-      d1.py = y1;
-      d1.dp["xp"] = x1;
-      d1.dp["yp"] = y1;
-      for (auto &key : extensive_props)
-        d1.dp[key] = mother.dp.at(key) / 2.0;
-      d1.dp["mom_px"] = d1.dp["Mp"] * d1.dp["vpx"];
-      d1.dp["mom_py"] = d1.dp["Mp"] * d1.dp["vpy"];
-      d1.ip["level"] = daughter_level;
-      d1.ip["label"] = -1;
-      add_particle(d1);
-
-      particle_data d2 = mother;
-      d2.px = x2;
-      d2.py = y2;
-      d2.dp["xp"] = x2;
-      d2.dp["yp"] = y2;
-      for (auto &key : extensive_props)
-        d2.dp[key] = mother.dp.at(key) / 2.0;
-      d2.dp["mom_px"] = d2.dp["Mp"] * d2.dp["vpx"];
-      d2.dp["mom_py"] = d2.dp["Mp"] * d2.dp["vpy"];
-      d2.ip["level"] = daughter_level;
-      d2.ip["label"] = -1;
-      add_particle(d2);
-
-      break;
-    }
-
-    case MERGE_PRIMARY: {
-      idx_t j = merge_partner[i];
-      particle_data p1 = extract_particle(ptcls, i);
-      particle_data p2 = extract_particle(ptcls, j);
-
-      if (p1.ip.at("level") >= cfg.max_level) {
-        add_particle(p1); // keep both unchanged
-        add_particle(p2);
-        break;
+      for (int k = 0; k < num_ip; ++k) {
+        out_ip_ptrs[k][out] = in_ip_ptrs[k][i];
       }
 
-      double M1 = p1.dp["Mp"];
-      double M2 = p2.dp["Mp"];
-      double Mtot = M1 + M2;
-      particle_data merged;
-      merged.px = (M1 * p1.px + M2 * p2.px) / Mtot;
-      merged.py = (M1 * p1.py + M2 * p2.py) / Mtot;
-
-      for (auto &key : dp_keys) {
-        if (is_extensive(key))
-          merged.dp[key] = p1.dp[key] + p2.dp[key];
-        else
-          merged.dp[key] = (M1 * p1.dp[key] + M2 * p2.dp[key]) / Mtot;
-      }
-      merged.dp["xp"] = merged.px;
-      merged.dp["yp"] = merged.py;
-      merged.dp["mom_px"] = merged.dp["Mp"] * merged.dp["vpx"];
-      merged.dp["mom_py"] = merged.dp["Mp"] * merged.dp["vpy"];
-
-      for (auto &key : ip_keys)
-        merged.ip[key] = p1.ip[key];
-
-      merged.ip["level"] = p1.ip.at("level") + 1;
-
-      add_particle(merged);
-      break;
-    }
-
-    case MERGE_SECONDARY:
-      break;
+      if (dp_idx[e_xp] >= 0) out_dp_ptrs[dp_idx[e_xp]][out] = new_x[out];
+      if (dp_idx[e_yp] >= 0) out_dp_ptrs[dp_idx[e_yp]][out] = new_y[out];
+      if (dp_idx[e_mom_px] >= 0) out_dp_ptrs[dp_idx[e_mom_px]][out] = out_dp_ptrs[dp_idx[e_Mp]][out] * out_dp_ptrs[dp_idx[e_vpx]][out];
+      if (dp_idx[e_mom_py] >= 0) out_dp_ptrs[dp_idx[e_mom_py]][out] = out_dp_ptrs[dp_idx[e_Mp]][out] * out_dp_ptrs[dp_idx[e_vpy]][out];
+      if (ip_idx[e_level] >= 0) out_ip_ptrs[ip_idx[e_level]][out] = level + 1;
     }
   }
 
-  // update in ptcls
   ptcls.x = std::move(new_x);
   ptcls.y = std::move(new_y);
+  for (int k = 0; k < num_dp; ++k) ptcls.dprops[dp_keys[k]] = std::move(new_dp[k]);
+  for (int k = 0; k < num_ip; ++k) ptcls.iprops[ip_keys[k]] = std::move(new_ip[k]);
+  ptcls.num_particles = exact_est;
 
-  for (std::size_t k = 0; k < dp_keys.size(); ++k)
-    ptcls.dprops[dp_keys[k]] = std::move(new_dp[k]);
-  for (std::size_t k = 0; k < ip_keys.size(); ++k)
-    ptcls.iprops[ip_keys[k]] = std::move(new_ip[k]);
-
-  ptcls.num_particles = static_cast<idx_t>(ptcls.x.size());
-
-  // check
   auto cc_after = compute_conservation(ptcls);
   print_conservation("AFTER  merge/split", cc_after);
 }
@@ -591,7 +669,7 @@ inline void execute_merge_split(particles_t &ptcls,
 template <typename idx_t>
 inline void adaptive_merge_split(particles_t &ptcls, const ms_config &cfg) {
 
-  std::vector<bool> is_exterior;
+  std::vector<char> is_exterior;
   mark_exterior_cells(ptcls, is_exterior);
 
   // BFS distance to fluid boundary
@@ -622,6 +700,7 @@ inline void adaptive_merge_split(particles_t &ptcls, const ms_config &cfg) {
   }
 
   execute_merge_split(ptcls, actions, merge_partner, cfg);
+
 }
 
 #endif

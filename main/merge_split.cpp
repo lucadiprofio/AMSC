@@ -208,6 +208,7 @@ int main() {
     //  (0)  CONNECTIVITY and BASIS FUNCTIONS
     my_timer.tic("reorder");
     ptcls.init_particle_mesh();
+    my_timer.toc("reorder");
 
     /*      ordering.resize (ptcls.num_particles);
           idx_t iordering = 0;
@@ -224,7 +225,7 @@ int main() {
               jj = iordering++;
             }
           }
-      my_timer.toc ("reorder"); */
+    */
 
     my_timer.tic("step 0");
     for (auto &v : vars) {
@@ -245,7 +246,9 @@ int main() {
 
     // MERGE/SPLIT
     if (it % ms_cfg.call_interval == 0 && it > 0) {
+      my_timer.tic("merge-split");
       adaptive_merge_split<idx_t>(ptcls, ms_cfg);
+      my_timer.toc("merge-split");
       ptcls.init_particle_mesh();
       // Aggiorna num_particles per i vettori locali
       num_particles = ptcls.num_particles;
