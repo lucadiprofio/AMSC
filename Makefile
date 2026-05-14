@@ -20,8 +20,15 @@ LDLIBS     :=
 
 LIBOBJS    := $(BUILDDIR)/particles.o $(BUILDDIR)/timer.o
 
-TARGETS    := godamp wbal exam optim merge_split gpu_offload
+# wbal exam optim_par
+TARGETS    := godamp optim merge_split gpu_offload
 EXES       := $(addprefix $(BUILDDIR)/, $(TARGETS))
+
+# NVHPC compiler specific flags
+NVCXX      ?= nvc++
+NV_OPT     := -O4 -DNDEBUG
+NV_GPU_ARCH:= -gpu=cc89 # equivalente a -arch=sm_89 per nvc++
+
 
 .PHONY: all clean libs
 
@@ -38,27 +45,28 @@ $(BUILDDIR)/particles.o: $(QGSRC)/particles.cpp | $(BUILDDIR)
 $(BUILDDIR)/timer.o: $(TIMERSRC)/timer.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Regola per linkare gli eseguibili (NON cattura particles.o e timer.o)
+# rule to link the executables
 $(BUILDDIR)/godamp: $(MAINDIR)/godamp.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-$(BUILDDIR)/wbal: $(MAINDIR)/wbal.cpp $(LIBOBJS) | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+# $(BUILDDIR)/wbal: $(MAINDIR)/wbal.cpp $(LIBOBJS) | $(BUILDDIR)
+# 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-$(BUILDDIR)/exam: $(MAINDIR)/exam.cpp $(LIBOBJS) | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+# $(BUILDDIR)/exam: $(MAINDIR)/exam.cpp $(LIBOBJS) | $(BUILDDIR)
+# 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 $(BUILDDIR)/optim: $(MAINDIR)/optim.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
+# $(BUILDDIR)/optim_par: $(MAINDIR)/optim_par.cpp $(LIBOBJS) | $(BUILDDIR)
+# 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ -ltbb
+
 $(BUILDDIR)/merge_split: $(MAINDIR)/merge_split.cpp $(LIBOBJS) | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+	$(NVCXX) $(CXXSTD) $(NV_OPT) $(INCLUDES) -mp=gpu,multicore $(NV_GPU_ARCH) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 $(BUILDDIR)/gpu_offload: $(MAINDIR)/gpu_offload.cpp $(LIBOBJS) | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+	$(NVCXX) $(CXXSTD) $(NV_OPT) $(INCLUDES) -mp=gpu,multicore $(NV_GPU_ARCH) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-$(BUILDDIR)/optim_par: $(MAINDIR)/optim_par.cpp $(LIBOBJS) | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ -ltbb
 
 clean:
 	rm -rf $(BUILDDIR)
