@@ -45,27 +45,27 @@ $(BUILDDIR)/particles.o: $(QGSRC)/particles.cpp | $(BUILDDIR)
 $(BUILDDIR)/timer.o: $(TIMERSRC)/timer.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# rule to link the executables
+$(BUILDDIR)/merge_split_bfs.o: $(MAINDIR)/merge_split_bfs.cpp | $(BUILDDIR)
+	nvc++ $(CXXSTD) -O2 -g $(INCLUDES) -c $< -o $@
+
+# Regola per linkare gli eseguibili (NON cattura particles.o e timer.o)
 $(BUILDDIR)/godamp: $(MAINDIR)/godamp.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-# $(BUILDDIR)/wbal: $(MAINDIR)/wbal.cpp $(LIBOBJS) | $(BUILDDIR)
-# 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+$(BUILDDIR)/wbal: $(MAINDIR)/wbal.cpp $(LIBOBJS) | $(BUILDDIR)
+ 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-# $(BUILDDIR)/exam: $(MAINDIR)/exam.cpp $(LIBOBJS) | $(BUILDDIR)
-# 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+$(BUILDDIR)/exam: $(MAINDIR)/exam.cpp $(LIBOBJS) | $(BUILDDIR)
+ 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 $(BUILDDIR)/optim: $(MAINDIR)/optim.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-# $(BUILDDIR)/optim_par: $(MAINDIR)/optim_par.cpp $(LIBOBJS) | $(BUILDDIR)
-# 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ -ltbb
+$(BUILDDIR)/merge_split: $(MAINDIR)/merge_split.cpp $(LIBOBJS) $(BUILDDIR)/merge_split_bfs.o | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) $(BUILDDIR)/merge_split_bfs.o -o $@ $(LDFLAGS) $(LDLIBS)
 
-$(BUILDDIR)/merge_split: $(MAINDIR)/merge_split.cpp $(LIBOBJS) | $(BUILDDIR)
-	$(NVCXX) $(CXXSTD) $(NV_OPT) $(INCLUDES) -mp=gpu,multicore $(NV_GPU_ARCH) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
-
-$(BUILDDIR)/gpu_offload: $(MAINDIR)/gpu_offload.cpp $(LIBOBJS) | $(BUILDDIR)
-	$(NVCXX) $(CXXSTD) $(NV_OPT) $(INCLUDES) -mp=gpu,multicore $(NV_GPU_ARCH) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+$(BUILDDIR)/gpu_offload: $(MAINDIR)/gpu_offload.cpp $(LIBOBJS) $(BUILDDIR)/merge_split_bfs.o | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) $(BUILDDIR)/merge_split_bfs.o -o $@ $(LDFLAGS) $(LDLIBS)
 
 
 clean:

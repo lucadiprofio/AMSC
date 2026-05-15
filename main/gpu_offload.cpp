@@ -1,3 +1,4 @@
+#include "merge_split_ops.h"
 #include <fstream>
 #include <map>
 #include <cmath>
@@ -8,6 +9,7 @@
 #include <timer.h>
 #include "mpm_data.h"
 #include "gpu_kernels.h"
+
 
 using idx_t = quadgrid_t<std::vector<double>>::idx_t;
 cdf::timer::timer_t my_timer{};
@@ -20,7 +22,7 @@ int main ()
   grid.set_sizes (data.Ney, data.Nex, data.hx, data.hy);
 
   idx_t num_particles = data.x.size();
-  particles_t ptcls (num_particles, {"label"}, {"Mp", "Ap","vpx","vpy","mom_px","mom_py","hp",
+  particles_t ptcls (num_particles, {"label", "level"}, {"Mp", "Ap","vpx","vpy","mom_px","mom_py","hp",
 	      "Vp","F_ext_px","F_ext_py","apx","apy",
 	      "F_11","F_12","F_21","F_22","vpx_dx","vpx_dy",
 	      "vpy_dx","vpy_dy","Fb_x","Fb_y","hpZ","dZxp","dZyp","Zp","xp","yp","Fric_px","Fric_py"}, grid, data.x, data.y);
@@ -51,7 +53,8 @@ int main ()
   }
 
   std::iota(ptcls.iprops["label"].begin(), ptcls.iprops["label"].end(), 0);
-
+  std::fill(ptcls.iprops["level"].begin(), ptcls.iprops["level"].end(), 0);
+  
   double t = 0.0;
   double dt;
   double cel;
@@ -111,6 +114,9 @@ int main ()
   int it = 0;
   ptcls.build_mass();
   grid.vtk_export("GRID_forZ.vts", vars);
+
+  ms_config ms_cfg;
+  
   dt = 1.0e-5;
 
   // GPU INFO
@@ -120,8 +126,8 @@ int main ()
   else
     std::cout << "WARNING: No GPU, running on CPU" << std::endl;
 
-  // EXTRACT RAW POINTERS (stable: vectors never resize in time loop)
-  const int np     = ptcls.num_particles;
+  // EXTRACT RAW POINTERS
+  int np     = ptcls.num_particles;
   const int nn     = grid.num_global_nodes();
   const int nrows  = grid.num_rows();
   const int ncols  = grid.num_cols();
@@ -220,7 +226,52 @@ int main ()
     // CPU: connectivity + color index building
     my_timer.tic("reorder");
       ptcls.init_particle_mesh();
-    my_timer.toc("reorder");  
+    my_timer.toc("reorder"); 
+    
+    my_timer.toc("reorder");
+
+    // --- MERGE/SPLIT (every N iterations) ---
+    if (it % ms_cfg.call_interval == 0 && it > 0) {
+      my_timer.tic("merge_split");
+      adaptive_merge_split<idx_t>(ptcls, ms_cfg);
+
+      d_x       = ptcls.x.data();
+      d_y       = ptcls.y.data();
+      d_vpx     = ptcls.dprops["vpx"].data();
+      d_vpy     = ptcls.dprops["vpy"].data();
+      d_apx     = ptcls.dprops["apx"].data();
+      d_apy     = ptcls.dprops["apy"].data();
+      d_hp      = ptcls.dprops["hp"].data();
+      d_Ap      = ptcls.dprops["Ap"].data();
+      d_Vp      = ptcls.dprops["Vp"].data();
+      d_Mp      = ptcls.dprops["Mp"].data();
+      d_mom_px  = ptcls.dprops["mom_px"].data();
+      d_mom_py  = ptcls.dprops["mom_py"].data();
+      d_F11     = ptcls.dprops["F_11"].data();
+      d_F12     = ptcls.dprops["F_12"].data();
+      d_F21     = ptcls.dprops["F_21"].data();
+      d_F22     = ptcls.dprops["F_22"].data();
+      d_vpx_dx  = ptcls.dprops["vpx_dx"].data();
+      d_vpx_dy  = ptcls.dprops["vpx_dy"].data();
+      d_vpy_dx  = ptcls.dprops["vpy_dx"].data();
+      d_vpy_dy  = ptcls.dprops["vpy_dy"].data();
+      d_Fb_x    = ptcls.dprops["Fb_x"].data();
+      d_Fb_y    = ptcls.dprops["Fb_y"].data();
+      d_Fric_px = ptcls.dprops["Fric_px"].data();
+      d_Fric_py = ptcls.dprops["Fric_py"].data();
+      d_dZxp    = ptcls.dprops["dZxp"].data();
+      d_dZyp    = ptcls.dprops["dZyp"].data();
+      d_Zp      = ptcls.dprops["Zp"].data();
+      d_hpZ     = ptcls.dprops["hpZ"].data();
+      d_p2g     = ptcls.ptcl_to_grd.data();
+      np        = ptcls.num_particles;
+
+      // Ridimensiona color_indices
+      color_indices.resize(np);
+      ptcls.init_particle_mesh();
+      my_timer.toc("merge_split");
+    }
+
 
     my_timer.tic("build_colors");
     {
@@ -259,6 +310,7 @@ int main ()
       vars["dZdx"] = data.dZdx;
       vars["dZdy"] = data.dZdy;
     my_timer.toc("step 0");
+
 
     // GPU PHASE: ALL computation in one target data block
     my_timer.tic("gpu_block");
