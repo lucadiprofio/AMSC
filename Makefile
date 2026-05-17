@@ -27,7 +27,7 @@ EXES       := $(addprefix $(BUILDDIR)/, $(TARGETS))
 # NVHPC compiler specific flags
 NVCXX      ?= nvc++
 NV_OPT     := -O4 -DNDEBUG
-NV_GPU_ARCH:= -gpu=cc89 # equivalente a -arch=sm_89 per nvc++
+NV_GPU_ARCH:= # -gpu=cc89 # equivalente a -arch=sm_89 per nvc++
 
 
 .PHONY: all clean libs
@@ -48,7 +48,7 @@ $(BUILDDIR)/timer.o: $(TIMERSRC)/timer.cpp | $(BUILDDIR)
 $(BUILDDIR)/merge_split_bfs.o: $(MAINDIR)/merge_split_bfs.cpp | $(BUILDDIR)
 	nvc++ $(CXXSTD) -O2 -g $(INCLUDES) -c $< -o $@
 
-# Regola per linkare gli eseguibili (NON cattura particles.o e timer.o)
+
 $(BUILDDIR)/godamp: $(MAINDIR)/godamp.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
