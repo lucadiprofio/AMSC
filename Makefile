@@ -4,6 +4,7 @@ OPT        := -O2 -mp=gpu -gpu=cc89 -Minfo=accel
 WARN       := 
 DEBUG      := 
 
+# paths
 ROOT       := $(shell pwd)
 QGINC      := $(ROOT)/quadgrid/include
 QGSRC      := $(ROOT)/quadgrid/src
@@ -13,6 +14,7 @@ TIMERSRC   := $(ROOT)/timer/src
 MAINDIR    := $(ROOT)/main
 BUILDDIR   := $(ROOT)/build
 
+# includes, compilation flags and libraries
 INCLUDES   := -I$(QGINC) -I$(JSONINC) -I$(TIMERINC) -I$(MAINDIR)
 CXXFLAGS   := $(CXXSTD) $(OPT) $(WARN) $(DEBUG) $(INCLUDES)
 LDFLAGS    := -mp=gpu -gpu=cc89
@@ -47,9 +49,6 @@ $(BUILDDIR)/godamp: $(MAINDIR)/godamp.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 $(BUILDDIR)/wbal: $(MAINDIR)/wbal.cpp $(LIBOBJS) | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
-
-$(BUILDDIR)/exam: $(MAINDIR)/exam.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 $(BUILDDIR)/optim: $(MAINDIR)/optim.cpp $(LIBOBJS) | $(BUILDDIR)

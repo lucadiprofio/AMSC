@@ -201,7 +201,10 @@ inline void decide_actions(const particles_t &ptcls,
     if (elfs_i < alpha * r_i) {
       if (level_vec[ip] > min_level)
         act[ip] = SPLIT;
+      if (level_vec[ip] > min_level)
+        act[ip] = SPLIT;
     } else if (elfs_i > beta * r_i) {
+      if (level_vec[ip] < max_level)
       if (level_vec[ip] < max_level)
         act[ip] = MERGE_PRIMARY;
     }
@@ -275,17 +278,6 @@ inline void decide_actions(const particles_t &ptcls,
         actions[candidates[i]] = KEEP;
     }
   }
-
-  // // 4. Sanitize: Ensure no MERGE_PRIMARY is left without a partner!
-  // // This prevents SegFaults if a particle was marked MERGE_PRIMARY by the
-  // GPU
-  // // but wasn't processed by the CPU (e.g., if it's out of grid bounds / not
-  // in grd_to_ptcl). #pragma omp parallel for schedule(static) for (idx_t i =
-  // 0; i < N_p; ++i) {
-  //   if (actions[i] == MERGE_PRIMARY && merge_partner[i] < 0) {
-  //     actions[i] = KEEP;
-  //   }
-  // }
 
   std::cerr << "  [decide] splits=" << n_splits << "  merges=" << n_merges
             << std::endl;
@@ -397,6 +389,7 @@ inline void execute_merge_split(particles_t &ptcls,
   const double min_h = std::min(hx, hy);
   const int ncols = ptcls.grid.num_cols();
   const int nrows = ptcls.grid.num_rows();
+  const int nrows = ptcls.grid.num_rows();
 
 #pragma omp parallel for schedule(guided)
   for (idx_t i = 0; i < N_p; ++i) {
@@ -422,13 +415,14 @@ inline void execute_merge_split(particles_t &ptcls,
       double x1 = px - offset_dist, x2 = px + offset_dist;
       double y1 = py - offset_dist, y2 = py + offset_dist;
 
+      // clamp coordinates to grid bounds (prevents particles from going outside the simulation domain)
       if (x1 < 1e-10 || x1 > ncols * hx - 1e-10)
         x1 = std::max(1e-10, std::min(ncols * hx - 1e-10, x1));
       if (x2 < 1e-10 || x2 > ncols * hx - 1e-10)
         x2 = std::max(1e-10, std::min(ncols * hx - 1e-10, x2));
-      if (y1 < 1e-10 || y1 > nrows * hx - 1e-10)
+      if (y1 < 1e-10 || y1 > nrows * hy - 1e-10)
         y1 = std::max(1e-10, std::min(nrows * hy - 1e-10, y1));
-      if (y2 < 1e-10 || y2 > nrows * hx - 1e-10)
+      if (y2 < 1e-10 || y2 > nrows * hy - 1e-10)
         y2 = std::max(1e-10, std::min(nrows * hy - 1e-10, y2));
 
       new_x[out1] = x1;
@@ -436,7 +430,7 @@ inline void execute_merge_split(particles_t &ptcls,
       new_x[out2] = x2;
       new_y[out2] = y2;
 
-      // Copy all properties to children (halving extensive ones)
+      // copy all properties to children (halving extensive ones)
       for (int k = 0; k < num_dp; ++k) {
         double val = in_dp_ptrs[k][i] / (is_ext[k] ? 2.0 : 1.0);
         out_dp_ptrs[k][out1] = val;
