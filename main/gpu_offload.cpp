@@ -1,4 +1,3 @@
-#include "gpu_kernels.h"
 #include "merge_split_ops.h"
 #include "mpm_data.h"
 #include <cmath>
@@ -356,12 +355,12 @@ int main() {
             int ip = d_cidx[ii];
             double xx = d_x[ip], yy = d_y[ip];
             int ci = d_p2g[ip];
-            int r = gpu_gind2row(ci, nrows);
-            int c = gpu_gind2col(ci, nrows);
+            int r = gind2row(ci, nrows);
+            int c = gind2col(ci, nrows);
             // across nodes
             for (int in = 0; in < 4; in++) {
-              double N = gpu_shp(xx, yy, in, c, r, hx, hy);
-              int nidx = gpu_gt(in, c, r, nrows);
+              double N = shp(xx, yy, in, c, r, hx, hy);
+              int nidx = gt(in, c, r, nrows);
 #pragma omp atomic
               d_Mv[nidx] += N * d_Mp[ip];
 #pragma omp atomic
@@ -377,13 +376,13 @@ int main() {
         for (int ip = 0; ip < np; ip++) {
           double xx = d_x[ip], yy = d_y[ip];
           int ci = d_p2g[ip];
-          int r = gpu_gind2row(ci, nrows);
-          int c = gpu_gind2col(ci, nrows);
+          int r = gind2row(ci, nrows);
+          int c = gind2col(ci, nrows);
           double dzx = 0.0, dzy = 0.0;
           for (int in = 0; in < 4; in++) {
-            double Nx = gpu_shg(xx, yy, 0, in, c, r, hx, hy);
-            double Ny = gpu_shg(xx, yy, 1, in, c, r, hx, hy);
-            int nidx = gpu_gt(in, c, r, nrows);
+            double Nx = shg(xx, yy, 0, in, c, r, hx, hy);
+            double Ny = shg(xx, yy, 1, in, c, r, hx, hy);
+            int nidx = gt(in, c, r, nrows);
             dzx += Nx * d_Z[nidx];
             dzy += Ny * d_Z[nidx];
           }
@@ -411,11 +410,11 @@ int main() {
             int ip = d_cidx[ii];
             double xx = d_x[ip], yy = d_y[ip];
             int ci = d_p2g[ip];
-            int r = gpu_gind2row(ci, nrows);
-            int c = gpu_gind2col(ci, nrows);
+            int r = gind2row(ci, nrows);
+            int c = gind2col(ci, nrows);
             for (int in = 0; in < 4; in++) {
-              double N = gpu_shp(xx, yy, in, c, r, hx, hy);
-              int nidx = gpu_gt(in, c, r, nrows);
+              double N = shp(xx, yy, in, c, r, hx, hy);
+              int nidx = gt(in, c, r, nrows);
 #pragma omp atomic
               d_Fric_x[nidx] += N * d_Fric_px[ip];
 #pragma omp atomic
@@ -443,13 +442,13 @@ int main() {
             int ip = d_cidx[ii];
             double xx = d_x[ip], yy = d_y[ip];
             int ci = d_p2g[ip];
-            int r = gpu_gind2row(ci, nrows);
-            int c = gpu_gind2col(ci, nrows);
+            int r = gind2row(ci, nrows);
+            int c = gind2col(ci, nrows);
             double vp = d_Vp[ip];
             for (int in = 0; in < 4; in++) {
-              double Nx = gpu_shg(xx, yy, 0, in, c, r, hx, hy);
-              double Ny = gpu_shg(xx, yy, 1, in, c, r, hx, hy);
-              int nidx = gpu_gt(in, c, r, nrows);
+              double Nx = shg(xx, yy, 0, in, c, r, hx, hy);
+              double Ny = shg(xx, yy, 1, in, c, r, hx, hy);
+              int nidx = gt(in, c, r, nrows);
 #pragma omp atomic
               d_F_int_vx[nidx] += (Nx * d_F11[ip] + Ny * d_F12[ip]) * vp;
 #pragma omp atomic
@@ -498,12 +497,12 @@ int main() {
         for (int ip = 0; ip < np; ip++) {
           double xx = d_x[ip], yy = d_y[ip];
           int ci = d_p2g[ip];
-          int r = gpu_gind2row(ci, nrows);
-          int c = gpu_gind2col(ci, nrows);
+          int r = gind2row(ci, nrows);
+          int c = gind2col(ci, nrows);
           double vx = 0, vy = 0, ax = 0, ay = 0;
           for (int in = 0; in < 4; in++) {
-            double N = gpu_shp(xx, yy, in, c, r, hx, hy);
-            int nidx = gpu_gt(in, c, r, nrows);
+            double N = shp(xx, yy, in, c, r, hx, hy);
+            int nidx = gt(in, c, r, nrows);
             vx += N * d_vvx[nidx];
             vy += N * d_vvy[nidx];
             ax += N * d_avx[nidx];
@@ -524,13 +523,13 @@ int main() {
         for (int ip = 0; ip < np; ip++) {
           double xx = d_x[ip], yy = d_y[ip];
           int ci = d_p2g[ip];
-          int r = gpu_gind2row(ci, nrows);
-          int c = gpu_gind2col(ci, nrows);
+          int r = gind2row(ci, nrows);
+          int c = gind2col(ci, nrows);
           double vxdx = 0, vxdy = 0, vydx = 0, vydy = 0;
           for (int in = 0; in < 4; in++) {
-            double Nx = gpu_shg(xx, yy, 0, in, c, r, hx, hy);
-            double Ny = gpu_shg(xx, yy, 1, in, c, r, hx, hy);
-            int nidx = gpu_gt(in, c, r, nrows);
+            double Nx = shg(xx, yy, 0, in, c, r, hx, hy);
+            double Ny = shg(xx, yy, 1, in, c, r, hx, hy);
+            int nidx = gt(in, c, r, nrows);
             vxdx += Nx * d_vvx[nidx];
             vxdy += Ny * d_vvx[nidx];
             vydx += Nx * d_vvy[nidx];
@@ -600,12 +599,12 @@ int main() {
         for (int ip = 0; ip < np; ip++) {
           double xx = d_x[ip], yy = d_y[ip];
           int ci = d_p2g[ip];
-          int r = gpu_gind2row(ci, nrows);
-          int c = gpu_gind2col(ci, nrows);
+          int r = gind2row(ci, nrows);
+          int c = gind2col(ci, nrows);
           double zp = 0.0;
           for (int in = 0; in < 4; in++) {
-            double N = gpu_shp(xx, yy, in, c, r, hx, hy);
-            int nidx = gpu_gt(in, c, r, nrows);
+            double N = shp(xx, yy, in, c, r, hx, hy);
+            int nidx = gt(in, c, r, nrows);
             zp += N * d_Z[nidx];
           }
           d_Zp[ip] = zp;
