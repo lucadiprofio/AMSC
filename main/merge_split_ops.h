@@ -44,12 +44,12 @@ inline conservation_check compute_conservation(const particles_t &ptcls) {
   particles_t::idx_t N = ptcls.num_particles;
   double t_mass = 0.0, t_momx = 0.0, t_momy = 0.0;
 
-  const double *Mps = ptcls.dprops.at("Mp").data();
-  const double *mom_pxs = ptcls.dprops.at("mom_px").data();
-  const double *mom_pys = ptcls.dprops.at("mom_py").data();
-#pragma omp target teams distribute parallel for map(                          \
-        to : Mps[0 : N], mom_pxs[0 : N], mom_pys[0 : N])                       \
-    reduction(+ : t_mass, t_momx, t_momy)
+  const double* Mps = ptcls.dprops.at("Mp").data();
+  const double* mom_pxs = ptcls.dprops.at("mom_px").data();
+  const double* mom_pys = ptcls.dprops.at("mom_py").data();
+  #pragma omp target teams distribute parallel for \
+    map(to: Mps[0:N], mom_pxs[0:N], mom_pys[0:N]) \
+    reduction(+: t_mass, t_momx, t_momy)
   for (particles_t::idx_t i = 0; i < N; ++i) {
     t_mass += Mps[i];
     t_momx += mom_pxs[i];
@@ -95,17 +95,17 @@ inline void compute_elfs(const particles_t &ptcls,
 
   const idx_t N_p = ptcls.num_particles;
   elfs_values.resize(N_p);
-
-  const auto *ptcl_cell = ptcls.ptcl_to_grd.data();
-  const double *dist = cell_dist.data();
-  const char *ext = is_exterior.data();
-  double *elfs = elfs_values.data();
-
-  const double *px_ptr = ptcls.x.data();
-  const double *py_ptr = ptcls.y.data();
-#pragma omp target teams distribute parallel for map(                          \
-        to : px_ptr[0 : N_p], py_ptr[0 : N_p], ptcl_cell[0 : N_p],             \
-            dist[0 : ncells], ext[0 : ncells]) map(tofrom : elfs[0 : N_p])
+  
+  const auto* ptcl_cell = ptcls.ptcl_to_grd.data();
+  const double* dist = cell_dist.data();
+  const char* ext = is_exterior.data();
+  double* elfs = elfs_values.data();
+  
+  const double* px_ptr = ptcls.x.data();
+  const double* py_ptr = ptcls.y.data();
+  #pragma omp target teams distribute parallel for \
+    map(to: px_ptr[0:N_p], py_ptr[0:N_p], ptcl_cell[0:N_p], dist[0:ncells], ext[0:ncells]) \
+    map(tofrom: elfs[0:N_p])
   for (idx_t ip = 0; ip < N_p; ++ip) {
     int cell = ptcl_cell[ip];
     double base = dist[cell];
@@ -135,7 +135,7 @@ inline void compute_elfs(const particles_t &ptcls,
         if (!ext[nidx])
           continue;
 
-        // closest point on this exterior cell's bounding box
+          // closest point on this exterior cell's bounding box
         double cx_lo = c * hx, cx_hi = (c + 1) * hx;
         double cy_lo = r * hy, cy_hi = (r + 1) * hy;
 
@@ -149,8 +149,7 @@ inline void compute_elfs(const particles_t &ptcls,
         double d = std::sqrt(dx * dx + dy * dy);
 
         // same siutation as std::clamp case
-        if (d < min_dist)
-          min_dist = d;
+        if (d < min_dist) min_dist = d;
       }
     }
     elfs[ip] = min_dist;
@@ -172,7 +171,7 @@ inline void decide_actions(const particles_t &ptcls,
   double beta = cfg.beta;
   int min_level = cfg.min_level;
   int max_level = cfg.max_level;
-
+  
   const double hx = ptcls.grid.hx();
   const double hy = ptcls.grid.hy();
   const double min_h = std::min(hx, hy);
@@ -183,17 +182,18 @@ inline void decide_actions(const particles_t &ptcls,
   actions.assign(N_p, KEEP);
   merge_partner.assign(N_p, -1);
 
+
   // pointers to exploit openmp offloading.
   // This is the best way to handle large amount of data on the gpu
-  const double *Ap_vec = ptcls.dprops.at("Ap").data();
-  const double *elfs = elfs_values.data();
-  action_t *act = actions.data();
-  const idx_t *level_vec = ptcls.iprops.at("level").data();
-  const double *px = ptcls.x.data();
-  const double *py = ptcls.y.data();
-#pragma omp target teams distribute parallel for map(                          \
-        to : Ap_vec[0 : N_p], elfs[0 : N_p], level_vec[0 : N_p], px[0 : N_p],  \
-            py[0 : N_p]) map(tofrom : act[0 : N_p])
+  const double* Ap_vec = ptcls.dprops.at("Ap").data();
+  const double* elfs = elfs_values.data();
+  action_t* act = actions.data();
+  const idx_t* level_vec = ptcls.iprops.at("level").data();
+  const double* px = ptcls.x.data();
+  const double* py = ptcls.y.data();
+  #pragma omp target teams distribute parallel for \
+    map(to: Ap_vec[0:N_p], elfs[0:N_p], level_vec[0:N_p], px[0:N_p], py[0:N_p]) \
+    map(tofrom: act[0:N_p])
   for (idx_t ip = 0; ip < N_p; ++ip) {
     const double r_i = std::sqrt(Ap_vec[ip]);
     const double elfs_i = elfs[ip];
@@ -220,11 +220,11 @@ inline void decide_actions(const particles_t &ptcls,
     for (auto pidx : ptcl_list) {
       if (actions[pidx] == SPLIT) {
         if (n_splits < cfg.max_ops)
-          ++n_splits;
+        ++n_splits;
         else
           actions[pidx] = KEEP; // cap reached
       }
-    }
+  }
 
     // Collect merge candidates in this cell
     std::vector<idx_t> candidates;
@@ -260,12 +260,12 @@ inline void decide_actions(const particles_t &ptcls,
       }
 
       if (best_j < candidates.size()) {
-        idx_t i2 = candidates[best_j];
-        actions[i1] = MERGE_PRIMARY;
-        actions[i2] = MERGE_SECONDARY;
-        merge_partner[i1] = i2;
-        paired[i] = true;
-        paired[best_j] = true;
+          idx_t i2 = candidates[best_j];
+          actions[i1] = MERGE_PRIMARY;
+          actions[i2] = MERGE_SECONDARY;
+          merge_partner[i1] = i2;
+          paired[i] = true;
+          paired[best_j] = true;
         ++n_merges;
       } else {
         actions[i1] = KEEP; // no partner found
@@ -274,8 +274,7 @@ inline void decide_actions(const particles_t &ptcls,
 
     // Remaining unpaired candidates → demote to KEEP
     for (std::size_t i = 0; i < candidates.size(); ++i) {
-      if (!paired[i])
-        actions[candidates[i]] = KEEP;
+      if (!paired[i]) actions[candidates[i]] = KEEP;
     }
   }
 
@@ -297,7 +296,7 @@ inline void execute_merge_split(particles_t &ptcls,
   // estimate the new size and save offsets to parallelize the loop
   std::vector<int> offsets(N_p, 0);
   const int weights[] = {1, 2, 1, 0};
-
+  
   int exact_est = 0;
   // rearrange the arithmetic to avoid branch in the loop
   // using prefix-sum (scan) technique also for subsequent offloading...
@@ -305,49 +304,32 @@ inline void execute_merge_split(particles_t &ptcls,
     offsets[i] = exact_est;
     exact_est += weights[static_cast<int>(actions[i])];
   }
-  // thanks to this loop we know exaclty the final size of the arrays and the
-  // positions of each particle in the new arrays
+  // thanks to this loop we know exaclty the final size of the arrays and the positions of each particle in the new arrays
 
   // allocate new arrays
   std::vector<double> new_x(exact_est), new_y(exact_est);
 
   std::vector<std::string> dp_keys, ip_keys;
-  // parallelizing these loops is not necessary since there are only very few
-  // properties
-  for (auto const &[key, vec] : ptcls.dprops)
-    dp_keys.push_back(key);
-  for (auto const &[key, vec] : ptcls.iprops)
-    ip_keys.push_back(key);
+  // parallelizing these loops is not necessary since there are only very few properties
+  for (auto const &[key, vec] : ptcls.dprops) dp_keys.push_back(key);
+  for (auto const &[key, vec] : ptcls.iprops) ip_keys.push_back(key);
 
   std::vector<std::vector<double>> new_dp(dp_keys.size());
-  for (auto &property : new_dp)
-    property.resize(exact_est);
+  for (auto &property : new_dp) property.resize(exact_est);
   std::vector<std::vector<idx_t>> new_ip(ip_keys.size());
-  for (auto &property : new_ip)
-    property.resize(exact_est);
+  for (auto &property : new_ip) property.resize(exact_est);
 
   // prepare data pointers for openmp offloading
   int num_dp = dp_keys.size();
-  std::vector<const double *> in_dp_ptrs(num_dp);
-  std::vector<double *> out_dp_ptrs(num_dp);
+  std::vector<const double*> in_dp_ptrs(num_dp);
+  std::vector<double*> out_dp_ptrs(num_dp);
 
   // the function already defined is not gpu friendly
   std::vector<int> is_ext(num_dp, 0);
 
   // mapping of dprops to avoid the lookup in the map (slow)
-  enum DP_ID {
-    e_Mp = 0,
-    e_vpx,
-    e_vpy,
-    e_xp,
-    e_yp,
-    e_mom_px,
-    e_mom_py,
-    e_Ap,
-    e_DP_NUM
-  };
-  const std::string dp_names[] = {"Mp", "vpx",    "vpy",    "xp",
-                                  "yp", "mom_px", "mom_py", "Ap"};
+  enum DP_ID { e_Mp = 0, e_vpx, e_vpy, e_xp, e_yp, e_mom_px, e_mom_py, e_Ap, e_DP_NUM };
+  const std::string dp_names[] = {"Mp", "vpx", "vpy", "xp", "yp", "mom_px", "mom_py", "Ap"};
   int dp_idx[e_DP_NUM] = {-1, -1, -1, -1, -1, -1, -1, -1};
 
   // for each property, store its pointer
@@ -355,19 +337,18 @@ inline void execute_merge_split(particles_t &ptcls,
     // few iterations here, map lookup not a bottleneck
     in_dp_ptrs[k] = ptcls.dprops.at(dp_keys[k]).data();
     out_dp_ptrs[k] = new_dp[k].data();
-    if (is_extensive(dp_keys[k]))
-      is_ext[k] = 1;
+    if (is_extensive(dp_keys[k])) is_ext[k] = 1;
+    
 
     for (int e = 0; e < e_DP_NUM; ++e) {
-      if (dp_keys[k] == dp_names[e])
-        dp_idx[e] = k;
+      if (dp_keys[k] == dp_names[e]) dp_idx[e] = k;
     }
   }
 
   int num_ip = ip_keys.size();
-  std::vector<const idx_t *> in_ip_ptrs(num_ip);
-  std::vector<idx_t *> out_ip_ptrs(num_ip);
-
+  std::vector<const idx_t*> in_ip_ptrs(num_ip);
+  std::vector<idx_t*> out_ip_ptrs(num_ip);
+  
   // mapping of iprops
   enum IP_ID { e_level = 0, e_label, e_IP_NUM };
   const std::string ip_names[] = {"level", "label"};
@@ -376,10 +357,10 @@ inline void execute_merge_split(particles_t &ptcls,
   for (int k = 0; k < num_ip; ++k) {
     in_ip_ptrs[k] = ptcls.iprops.at(ip_keys[k]).data();
     out_ip_ptrs[k] = new_ip[k].data();
+    
 
     for (int e = 0; e < e_IP_NUM; ++e) {
-      if (ip_keys[k] == ip_names[e])
-        ip_idx[e] = k;
+      if (ip_keys[k] == ip_names[e]) ip_idx[e] = k;
     }
   }
 
@@ -398,15 +379,13 @@ inline void execute_merge_split(particles_t &ptcls,
 
       new_x[out] = ptcls.x[i];
       new_y[out] = ptcls.y[i];
-      for (int k = 0; k < num_dp; ++k)
-        out_dp_ptrs[k][out] = in_dp_ptrs[k][i];
-      for (int k = 0; k < num_ip; ++k)
-        out_ip_ptrs[k][out] = in_ip_ptrs[k][i];
+      for (int k = 0; k < num_dp; ++k) out_dp_ptrs[k][out] = in_dp_ptrs[k][i];
+      for (int k = 0; k < num_ip; ++k) out_ip_ptrs[k][out] = in_ip_ptrs[k][i];
     } else if (actions[i] == SPLIT) {
       int out1 = offsets[i];
       int out2 = offsets[i] + 1;
       idx_t level = in_ip_ptrs[ip_idx[e_level]][i];
-
+      
       double px = ptcls.x[i];
       double py = ptcls.y[i];
       double r_i = std::sqrt(in_dp_ptrs[dp_idx[e_Ap]][i]);
@@ -425,10 +404,8 @@ inline void execute_merge_split(particles_t &ptcls,
       if (y2 < 1e-10 || y2 > nrows * hy - 1e-10)
         y2 = std::max(1e-10, std::min(nrows * hy - 1e-10, y2));
 
-      new_x[out1] = x1;
-      new_y[out1] = y1;
-      new_x[out2] = x2;
-      new_y[out2] = y2;
+      new_x[out1] = x1; new_y[out1] = y1;
+      new_x[out2] = x2; new_y[out2] = y2;
 
       // copy all properties to children (halving extensive ones)
       for (int k = 0; k < num_dp; ++k) {
@@ -442,34 +419,20 @@ inline void execute_merge_split(particles_t &ptcls,
       }
 
       // helper functions to update specific physical properties
-      auto set_dp = [&](int e, double v1, double v2) {
-        if (dp_idx[e] >= 0) {
-          out_dp_ptrs[dp_idx[e]][out1] = v1;
-          out_dp_ptrs[dp_idx[e]][out2] = v2;
-        }
-      };
-      auto set_ip = [&](int e, idx_t v1, idx_t v2) {
-        if (ip_idx[e] >= 0) {
-          out_ip_ptrs[ip_idx[e]][out1] = v1;
-          out_ip_ptrs[ip_idx[e]][out2] = v2;
-        }
-      };
+      auto set_dp = [&](int e, double v1, double v2) { if (dp_idx[e] >= 0) { out_dp_ptrs[dp_idx[e]][out1] = v1; out_dp_ptrs[dp_idx[e]][out2] = v2; } };
+      auto set_ip = [&](int e, idx_t v1, idx_t v2)   { if (ip_idx[e] >= 0) { out_ip_ptrs[ip_idx[e]][out1] = v1; out_ip_ptrs[ip_idx[e]][out2] = v2; } };
 
       set_dp(e_xp, x1, x2);
       set_dp(e_yp, y1, y2);
-
+      
       if (dp_idx[e_mom_px] >= 0) {
-        double p1 =
-            out_dp_ptrs[dp_idx[e_Mp]][out1] * out_dp_ptrs[dp_idx[e_vpx]][out1];
-        double p2 =
-            out_dp_ptrs[dp_idx[e_Mp]][out2] * out_dp_ptrs[dp_idx[e_vpx]][out2];
+        double p1 = out_dp_ptrs[dp_idx[e_Mp]][out1] * out_dp_ptrs[dp_idx[e_vpx]][out1];
+        double p2 = out_dp_ptrs[dp_idx[e_Mp]][out2] * out_dp_ptrs[dp_idx[e_vpx]][out2];
         set_dp(e_mom_px, p1, p2);
       }
       if (dp_idx[e_mom_py] >= 0) {
-        double p1 =
-            out_dp_ptrs[dp_idx[e_Mp]][out1] * out_dp_ptrs[dp_idx[e_vpy]][out1];
-        double p2 =
-            out_dp_ptrs[dp_idx[e_Mp]][out2] * out_dp_ptrs[dp_idx[e_vpy]][out2];
+        double p1 = out_dp_ptrs[dp_idx[e_Mp]][out1] * out_dp_ptrs[dp_idx[e_vpy]][out1];
+        double p2 = out_dp_ptrs[dp_idx[e_Mp]][out2] * out_dp_ptrs[dp_idx[e_vpy]][out2];
         set_dp(e_mom_py, p1, p2);
       }
 
@@ -480,7 +443,7 @@ inline void execute_merge_split(particles_t &ptcls,
       int j = merge_partner[i];
       int out = offsets[i];
       idx_t level = in_ip_ptrs[ip_idx[e_level]][i];
-
+      
       double M1 = in_dp_ptrs[dp_idx[e_Mp]][i];
       double M2 = in_dp_ptrs[dp_idx[e_Mp]][j];
       double Mtot = M1 + M2;
@@ -492,35 +455,25 @@ inline void execute_merge_split(particles_t &ptcls,
         if (is_ext[k]) {
           out_dp_ptrs[k][out] = in_dp_ptrs[k][i] + in_dp_ptrs[k][j];
         } else {
-          out_dp_ptrs[k][out] =
-              (M1 * in_dp_ptrs[k][i] + M2 * in_dp_ptrs[k][j]) / Mtot;
+          out_dp_ptrs[k][out] = (M1 * in_dp_ptrs[k][i] + M2 * in_dp_ptrs[k][j]) / Mtot;
         }
       }
       for (int k = 0; k < num_ip; ++k) {
         out_ip_ptrs[k][out] = in_ip_ptrs[k][i];
       }
 
-      if (dp_idx[e_xp] >= 0)
-        out_dp_ptrs[dp_idx[e_xp]][out] = new_x[out];
-      if (dp_idx[e_yp] >= 0)
-        out_dp_ptrs[dp_idx[e_yp]][out] = new_y[out];
-      if (dp_idx[e_mom_px] >= 0)
-        out_dp_ptrs[dp_idx[e_mom_px]][out] =
-            out_dp_ptrs[dp_idx[e_Mp]][out] * out_dp_ptrs[dp_idx[e_vpx]][out];
-      if (dp_idx[e_mom_py] >= 0)
-        out_dp_ptrs[dp_idx[e_mom_py]][out] =
-            out_dp_ptrs[dp_idx[e_Mp]][out] * out_dp_ptrs[dp_idx[e_vpy]][out];
-      if (ip_idx[e_level] >= 0)
-        out_ip_ptrs[ip_idx[e_level]][out] = level + 1;
+      if (dp_idx[e_xp] >= 0) out_dp_ptrs[dp_idx[e_xp]][out] = new_x[out];
+      if (dp_idx[e_yp] >= 0) out_dp_ptrs[dp_idx[e_yp]][out] = new_y[out];
+      if (dp_idx[e_mom_px] >= 0) out_dp_ptrs[dp_idx[e_mom_px]][out] = out_dp_ptrs[dp_idx[e_Mp]][out] * out_dp_ptrs[dp_idx[e_vpx]][out];
+      if (dp_idx[e_mom_py] >= 0) out_dp_ptrs[dp_idx[e_mom_py]][out] = out_dp_ptrs[dp_idx[e_Mp]][out] * out_dp_ptrs[dp_idx[e_vpy]][out];
+      if (ip_idx[e_level] >= 0) out_ip_ptrs[ip_idx[e_level]][out] = level + 1;
     }
   }
 
   ptcls.x = std::move(new_x);
   ptcls.y = std::move(new_y);
-  for (int k = 0; k < num_dp; ++k)
-    ptcls.dprops[dp_keys[k]] = std::move(new_dp[k]);
-  for (int k = 0; k < num_ip; ++k)
-    ptcls.iprops[ip_keys[k]] = std::move(new_ip[k]);
+  for (int k = 0; k < num_dp; ++k) ptcls.dprops[dp_keys[k]] = std::move(new_dp[k]);
+  for (int k = 0; k < num_ip; ++k) ptcls.iprops[ip_keys[k]] = std::move(new_ip[k]);
   ptcls.num_particles = exact_est;
 
   auto cc_after = compute_conservation(ptcls);
@@ -561,6 +514,7 @@ inline void adaptive_merge_split(particles_t &ptcls, const ms_config &cfg) {
   }
 
   execute_merge_split(ptcls, actions, merge_partner, cfg);
+
 }
 
 #endif

@@ -41,9 +41,6 @@ $(BUILDDIR)/particles.o: $(QGSRC)/particles.cpp | $(BUILDDIR)
 $(BUILDDIR)/timer.o: $(TIMERSRC)/timer.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/merge_split_bfs.o: $(MAINDIR)/merge_split_bfs.cpp | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
 
 $(BUILDDIR)/godamp: $(MAINDIR)/godamp.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
@@ -51,14 +48,20 @@ $(BUILDDIR)/godamp: $(MAINDIR)/godamp.cpp $(LIBOBJS) | $(BUILDDIR)
 $(BUILDDIR)/wbal: $(MAINDIR)/wbal.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
+$(BUILDDIR)/exam: $(MAINDIR)/exam.cpp $(LIBOBJS) | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+
 $(BUILDDIR)/optim: $(MAINDIR)/optim.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-$(BUILDDIR)/merge_split: $(MAINDIR)/merge_split.cpp $(LIBOBJS) $(BUILDDIR)/merge_split_bfs.o | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) $(BUILDDIR)/merge_split_bfs.o -o $@ $(LDFLAGS) $(LDLIBS)
+$(BUILDDIR)/optim_par: $(MAINDIR)/optim_par.cpp $(LIBOBJS) | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-$(BUILDDIR)/gpu_offload: $(MAINDIR)/gpu_offload.cpp $(LIBOBJS) $(BUILDDIR)/merge_split_bfs.o | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) $(BUILDDIR)/merge_split_bfs.o -o $@ $(LDFLAGS) $(LDLIBS)
+$(BUILDDIR)/merge_split: $(MAINDIR)/merge_split.cpp $(LIBOBJS) | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+
+$(BUILDDIR)/gpu_offload: $(MAINDIR)/gpu_offload.cpp $(LIBOBJS) | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 
 clean:
