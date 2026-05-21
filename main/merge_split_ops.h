@@ -2,6 +2,8 @@
 #define MERGE_SPLIT_OPS_H
 
 #include <algorithm> // clamp()
+#include <queue>
+#include <set>
 #include <vector>
 
 #include <particles.h>
@@ -29,9 +31,11 @@ enum action_t : int {
   MERGE_SECONDARY = 3
 };
 
+static const std::set<std::string> extensive_props = {"Mp", "Vp", "Ap",
+                                                      "mom_px", "mom_py"};
+
 inline bool is_extensive(const std::string &name) {
-  return name == "Mp" || name == "Vp" || name == "Ap" || name == "mom_px" ||
-         name == "mom_py";
+  return extensive_props.count(name) > 0;
 }
 
 struct conservation_check {
@@ -68,12 +72,177 @@ inline void print_conservation(const std::string &label,
             << "  momy=" << cc.total_momy << std::endl;
 }
 
-void mark_exterior_cells(const particles_t &ptcls,
-                         std::vector<char> &is_exterior);
+/// @brief Mark cells that are genuinely exterior to the fluid.
+///
+/// Criteria: only empty cells reachable from the grid edge
+/// through a path of other empty cells are marked exterior.
+/// Internal holes (empty cells surrounded by fluid) are NOT marked,
+/// preventing false boundary detection.
+inline void mark_exterior_cells(const particles_t &ptcls,
+                                std::vector<char> &is_exterior) {
+  using idx_t = particles_t::idx_t;
 
-void compute_boundary_distance(const particles_t &ptcls,
-                               const std::vector<char> &is_exterior,
-                               std::vector<double> &cell_dist);
+  const idx_t nrows = ptcls.grid.num_rows();
+  const idx_t ncols = ptcls.grid.num_cols();
+  const int ncells = nrows * ncols;
+
+  auto flat_idx = [&](idx_t r, idx_t c) -> int { return r + nrows * c; };
+
+  // identify cells with particles
+  std::vector<char> has_particles(ncells, 0);
+  for (auto const &[cell_idx, ptcl_list] : ptcls.grd_to_ptcl)
+    if (!ptcl_list.empty())
+      has_particles[cell_idx] = 1;
+
+  // flood-fill bfs from grid boundary through empty cells
+  is_exterior.assign(ncells, 0);
+  std::queue<int> q;
+
+  // Seed: empty cells on the grid boundary
+  for (idx_t c = 0; c < ncols; ++c) {
+    for (idx_t r : {0, nrows - 1}) {
+      int idx = flat_idx(r, c);
+      if (!has_particles[idx] && !is_exterior[idx]) {
+        is_exterior[idx] = 1;
+        q.push(idx);
+      }
+    }
+  }
+  for (idx_t r = 0; r < nrows; ++r) {
+    for (idx_t c : {0, ncols - 1}) {
+      int idx = flat_idx(r, c);
+      if (!has_particles[idx] && !is_exterior[idx]) {
+        is_exterior[idx] = 1;
+        q.push(idx);
+      }
+    }
+  }
+  // rewriting the previous loop
+  /*
+  for (idx_t c = 0; c < ncols; ++c) {
+    for (idx_t r = 0; r < nrows; ++r) {
+      if (r == 0 || r == nrows - 1 || c == 0 || c == ncols - 1) {
+        int idx = flat_idx(r, c);
+        if (!has_particles[idx] && !is_exterior[idx]) {
+          is_exterior[idx] = 1;
+          q.push(idx);
+        }
+      }
+    }
+  }
+  */
+
+  // propagate only through empty cells
+  const int dr[] = {-1, 1, 0, 0};
+  const int dc[] = {0, 0, -1, 1};
+
+  while (!q.empty()) {
+    int cidx = q.front();
+    q.pop();
+    idx_t r = cidx % nrows;
+    idx_t c = cidx / nrows;
+
+    // "around cell"
+    for (int k = 0; k < 4; ++k) {
+      int nr = static_cast<int>(r) + dr[k];
+      int nc = static_cast<int>(c) + dc[k];
+      if (nr < 0 || nr >= static_cast<int>(nrows) || nc < 0 ||
+          nc >= static_cast<int>(ncols))
+        continue;
+      int nidx = flat_idx(nr, nc);
+      if (!has_particles[nidx] && !is_exterior[nidx]) {
+        is_exterior[nidx] = 1;
+        q.push(nidx);
+      }
+    }
+  }
+}
+
+/// @brief Compute per-cell distance to the fluid boundary.
+///
+/// The fluid boundary is the interface between wet cells (with
+/// particles) and exterior cells (identified by mark_exterior_cells).
+inline void compute_boundary_distance(const particles_t &ptcls,
+                                      const std::vector<char> &is_exterior,
+                                      std::vector<double> &cell_dist) {
+  using idx_t = particles_t::idx_t;
+
+  const idx_t nrows = ptcls.grid.num_rows();
+  const idx_t ncols = ptcls.grid.num_cols();
+  const int ncells = nrows * ncols;
+  const double h = std::min(ptcls.grid.hx(), ptcls.grid.hy());
+
+  // infinity via standard library
+  constexpr double INF = std::numeric_limits<double>::max();
+  cell_dist.assign(ncells, INF);
+
+  auto flat_idx = [&](idx_t r, idx_t c) -> int { return r + nrows * c; };
+
+  // Identify cells with particles
+  std::vector<char> has_particles(ncells, 0);
+  for (auto const &[cell_idx, ptcl_list] : ptcls.grd_to_ptcl)
+    if (!ptcl_list.empty())
+      has_particles[cell_idx] = 1;
+
+  // (cell_index, distance_in_cells)
+  std::queue<std::pair<int, int>> bfs;
+
+  // wet cells adjacent to an exterior cell
+  for (idx_t c = 0; c < ncols; ++c) {
+    for (idx_t r = 0; r < nrows; ++r) {
+      int idx = flat_idx(r, c);
+      if (!has_particles[idx])
+        continue; // only seed from wet cells
+
+      // checks whether the wet cell is surrounded by any exterior cell
+      bool on_fluid_boundary = false;
+      if (r > 0 && is_exterior[flat_idx(r - 1, c)])
+        on_fluid_boundary = true;
+      if (r < nrows - 1 && is_exterior[flat_idx(r + 1, c)])
+        on_fluid_boundary = true;
+      if (c > 0 && is_exterior[flat_idx(r, c - 1)])
+        on_fluid_boundary = true;
+      if (c < ncols - 1 && is_exterior[flat_idx(r, c + 1)])
+        on_fluid_boundary = true;
+
+      if (on_fluid_boundary) {
+        cell_dist[idx] = 0.0;
+        // queue filled by wet cells that are on boundary
+        bfs.push({idx, 0});
+      }
+    }
+  }
+
+  // Flood-fill inward through wet cells
+  const int dr[] = {-1, 1, 0, 0};
+  const int dc[] = {0, 0, -1, 1};
+
+  while (!bfs.empty()) {
+    auto [cidx, d] = bfs.front();
+    bfs.pop();
+
+    idx_t r = cidx % nrows;
+    idx_t c = cidx / nrows;
+
+    for (int k = 0; k < 4; ++k) {
+      int nr = static_cast<int>(r) + dr[k];
+      int nc = static_cast<int>(c) + dc[k];
+      if (nr < 0 || nr >= static_cast<int>(nrows) || nc < 0 ||
+          nc >= static_cast<int>(ncols))
+        continue;
+
+      int nidx = flat_idx(nr, nc);
+      if (!has_particles[nidx])
+        continue; // don't propagate into empty cells
+
+      double new_dist = (d + 1) * h;
+      if (new_dist < cell_dist[nidx]) {
+        cell_dist[nidx] = new_dist;
+        bfs.push({nidx, d + 1});
+      }
+    }
+  }
+}
 
 // Uses the precomputed cell-level distance as a first-order
 // approximation. For particles near the boundary (at most one
@@ -199,14 +368,9 @@ inline void decide_actions(const particles_t &ptcls,
     const double elfs_i = elfs[ip];
 
     if (elfs_i < alpha * r_i) {
-      if (level_vec[ip] > min_level)
-        act[ip] = SPLIT;
-      if (level_vec[ip] > min_level)
-        act[ip] = SPLIT;
+      if (level_vec[ip] > min_level) act[ip] = SPLIT;
     } else if (elfs_i > beta * r_i) {
-      if (level_vec[ip] < max_level)
-      if (level_vec[ip] < max_level)
-        act[ip] = MERGE_PRIMARY;
+      if (level_vec[ip] < max_level) act[ip] = MERGE_PRIMARY;
     }
     // else: KEEP
   }
@@ -277,6 +441,16 @@ inline void decide_actions(const particles_t &ptcls,
       if (!paired[i]) actions[candidates[i]] = KEEP;
     }
   }
+
+  // // 4. Sanitize: Ensure no MERGE_PRIMARY is left without a partner!
+  // // This prevents SegFaults if a particle was marked MERGE_PRIMARY by the GPU
+  // // but wasn't processed by the CPU (e.g., if it's out of grid bounds / not in grd_to_ptcl).
+  // #pragma omp parallel for schedule(static)
+  // for (idx_t i = 0; i < N_p; ++i) {
+  //   if (actions[i] == MERGE_PRIMARY && merge_partner[i] < 0) {
+  //     actions[i] = KEEP;
+  //   }
+  // }
 
   std::cerr << "  [decide] splits=" << n_splits << "  merges=" << n_merges
             << std::endl;
@@ -370,7 +544,6 @@ inline void execute_merge_split(particles_t &ptcls,
   const double min_h = std::min(hx, hy);
   const int ncols = ptcls.grid.num_cols();
   const int nrows = ptcls.grid.num_rows();
-  const int nrows = ptcls.grid.num_rows();
 
 #pragma omp parallel for schedule(guided)
   for (idx_t i = 0; i < N_p; ++i) {
@@ -394,7 +567,7 @@ inline void execute_merge_split(particles_t &ptcls,
       double x1 = px - offset_dist, x2 = px + offset_dist;
       double y1 = py - offset_dist, y2 = py + offset_dist;
 
-      // clamp coordinates to grid bounds (prevents particles from going outside the simulation domain)
+      // If horizontal split goes out of bounds, try vertical
       if (x1 < 1e-10 || x1 > ncols * hx - 1e-10)
         x1 = std::max(1e-10, std::min(ncols * hx - 1e-10, x1));
       if (x2 < 1e-10 || x2 > ncols * hx - 1e-10)
@@ -407,7 +580,7 @@ inline void execute_merge_split(particles_t &ptcls,
       new_x[out1] = x1; new_y[out1] = y1;
       new_x[out2] = x2; new_y[out2] = y2;
 
-      // copy all properties to children (halving extensive ones)
+      // Copy all properties to children (halving extensive ones)
       for (int k = 0; k < num_dp; ++k) {
         double val = in_dp_ptrs[k][i] / (is_ext[k] ? 2.0 : 1.0);
         out_dp_ptrs[k][out1] = val;
