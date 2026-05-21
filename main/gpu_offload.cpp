@@ -9,6 +9,12 @@
 #include <quadgrid_cpp.h>
 #include <timer.h>
 
+#define gind2row quadgrid_t<std::vector<double>>::gind2row
+#define gind2col quadgrid_t<std::vector<double>>::gind2col
+#define shp quadgrid_t<std::vector<double>>::shp
+#define shg quadgrid_t<std::vector<double>>::shg
+#define gt quadgrid_t<std::vector<double>>::gt
+
 using idx_t = quadgrid_t<std::vector<double>>::idx_t;
 cdf::timer::timer_t my_timer{};
 

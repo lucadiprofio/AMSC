@@ -1,8 +1,8 @@
-CXX        ?= g++
+CXX        := nvc++
 CXXSTD     := -std=c++17
-OPT        := -O3 -DNDEBUG
-WARN       := -Wall -Wextra -Wno-unused-parameter
-DEBUG      := -g
+OPT        := -O2 -mp=gpu -gpu=cc89 -Minfo=accel
+WARN       := 
+DEBUG      := 
 
 ROOT       := $(shell pwd)
 QGINC      := $(ROOT)/quadgrid/include
@@ -15,19 +15,13 @@ BUILDDIR   := $(ROOT)/build
 
 INCLUDES   := -I$(QGINC) -I$(JSONINC) -I$(TIMERINC) -I$(MAINDIR)
 CXXFLAGS   := $(CXXSTD) $(OPT) $(WARN) $(DEBUG) $(INCLUDES)
-LDFLAGS    := 
+LDFLAGS    := -mp=gpu -gpu=cc89
 LDLIBS     :=
 
 LIBOBJS    := $(BUILDDIR)/particles.o $(BUILDDIR)/timer.o
 
-# wbal exam optim_par
-TARGETS    := godamp optim merge_split gpu_offload
+TARGETS    := godamp wbal exam optim optim_par merge_split gpu_offload
 EXES       := $(addprefix $(BUILDDIR)/, $(TARGETS))
-
-# NVHPC compiler specific flags
-NVCXX      ?= nvc++
-NV_OPT     := -O4 -DNDEBUG
-NV_GPU_ARCH:= # -gpu=cc89 # equivalente a -arch=sm_89 per nvc++
 
 
 .PHONY: all clean libs
@@ -46,17 +40,17 @@ $(BUILDDIR)/timer.o: $(TIMERSRC)/timer.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILDDIR)/merge_split_bfs.o: $(MAINDIR)/merge_split_bfs.cpp | $(BUILDDIR)
-	nvc++ $(CXXSTD) -O2 -g $(INCLUDES) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 
 $(BUILDDIR)/godamp: $(MAINDIR)/godamp.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-#$(BUILDDIR)/wbal: $(MAINDIR)/wbal.cpp $(LIBOBJS) | $(BUILDDIR)
-#	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+$(BUILDDIR)/wbal: $(MAINDIR)/wbal.cpp $(LIBOBJS) | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-#$(BUILDDIR)/exam: $(MAINDIR)/exam.cpp $(LIBOBJS) | $(BUILDDIR)
-#	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+$(BUILDDIR)/exam: $(MAINDIR)/exam.cpp $(LIBOBJS) | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 $(BUILDDIR)/optim: $(MAINDIR)/optim.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
