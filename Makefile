@@ -1,8 +1,8 @@
-CXX        := nvc++
+CXX        := nvc++ #g++
 CXXSTD     := -std=c++17
-OPT        := -O2 -mp=gpu -gpu=cc89 -Minfo=accel
+OPT        := -O2 -mp=gpu -gpu=cc89 -Minfo=accel #-O3 -DNDEBUG
 WARN       := 
-DEBUG      := 
+DEBUG      := #-g
 
 # paths
 ROOT       := $(shell pwd)

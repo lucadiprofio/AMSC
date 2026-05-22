@@ -109,12 +109,26 @@ h(h < 0) = 0;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 AA = mask_in; %double(mask_in);
 AA = AA(:,:,1);
-CC = im2bw(AA); % imbinarize(AA);
-Bbin = bwboundaries(CC);
 
-for k = 1:length(Bbin)
-   boundary = Bbin{k};
+CC = AA > 0.5;
+[boundary_y, boundary_x] = find(CC);
+
+% Tracing del contorno manuale: trova i pixel di bordo
+% (pixel accesi con almeno un vicino spento)
+[nr, nc_img] = size(CC);
+is_border = false(nr, nc_img);
+for r = 1:nr
+  for c = 1:nc_img
+    if CC(r,c)
+      if r==1 || r==nr || c==1 || c==nc_img || ...
+         ~CC(r-1,c) || ~CC(r+1,c) || ~CC(r,c-1) || ~CC(r,c+1)
+        is_border(r,c) = true;
+      end
+    end
+  end
 end
+[br, bc] = find(is_border);
+boundary = [br, bc];
 
 %figure()
 %plot(boundary(:,2), boundary(:,1), 'rx-', 'LineWidth', 1.0)
@@ -254,11 +268,61 @@ DATA = struct( "x", xp, ...
      "FRICTION_ON", FRICTION, ...
      "CFL", CFL,...
      "BC_FLAG",BC_FLAG);
-json = jsonencode(DATA);
+
+% --- Scrittura manuale del DATA.json ---
+function v2j (fid, name, x, last)
+  if isscalar(x) && ~ischar(x)
+    fprintf(fid, '"%s": %.17g', name, x);
+  elseif ischar(x)
+    fprintf(fid, '"%s": "%s"', name, x);
+  else
+    x = x(:);
+    fprintf(fid, '"%s": [', name);
+    fprintf(fid, '%.17g', x(1));
+    for k = 2:numel(x)
+      fprintf(fid, ',%.17g', x(k));
+    endfor
+    fprintf(fid, ']');
+  endif
+  if (~last)
+    fprintf(fid, ',\n');
+  else
+    fprintf(fid, '\n');
+  endif
+endfunction
 
 FID = fopen("DATA.json","w");
-fprintf(FID,json);
+fprintf(FID, "{\n");
+v2j(FID, "x",           xp,         false);
+v2j(FID, "y",           yp,         false);
+v2j(FID, "Mp",          Mp,         false);
+v2j(FID, "Ap",          Ap,         false);
+v2j(FID, "vpx",         vp(:,1),    false);
+v2j(FID, "vpy",         vp(:,2),    false);
+v2j(FID, "Nex",         ndivcols,   false);
+v2j(FID, "Ney",         ndivrows,   false);
+v2j(FID, "hx",          hx,         false);
+v2j(FID, "hy",          hy,         false);
+v2j(FID, "hp",          hp,         false);
+v2j(FID, "mom_px",      momp(:,1),  false);
+v2j(FID, "mom_py",      momp(:,2),  false);
+v2j(FID, "g",           g,          false);
+v2j(FID, "T",           T,          false);
+v2j(FID, "xi",          xi,         false);
+v2j(FID, "vis",         vis,        false);
+v2j(FID, "ty",          ty,         false);
+v2j(FID, "rho",         rhosy,      false);
+v2j(FID, "Vp",          Vp,         false);
+v2j(FID, "Z",           Z,          false);
+v2j(FID, "dZdx",        dZdx,       false);
+v2j(FID, "dZdy",        dZdy,       false);
+v2j(FID, "BINGHAM_ON",  BINGHAM,    false);
+v2j(FID, "FRICTION_ON", FRICTION,   false);
+v2j(FID, "CFL",         CFL,        false);
+v2j(FID, "BC_FLAG",     BC_FLAG,    true);
+fprintf(FID, "}\n");
 fclose(FID);
+disp("DATA.json scritto correttamente");
 
 
 

@@ -184,7 +184,8 @@ int main ()
             cel = std::abs(max_vel);
 
 	    if (it > 0)
-	      dt = 0.2* data.hx / (1e-2 + cel); // 0.7      0.2 *  data.hx / (1e-4 + cel);
+	      //dt = 0.2* data.hx / (1e-2 + cel); // 0.7      0.2 *  data.hx / (1e-4 + cel);
+        dt = dt = 1.0e-5;
 	      std::cout << "time = " << t << "  " << " dt = " <<  dt << std::endl;
     my_timer.toc ("update dt");
 
@@ -265,8 +266,8 @@ int main ()
 		  for (auto ip = 0; ip < ptcls.grd_to_ptcl.at (icell->get_global_cell_idx ()).size (); ++ip)
 		     {
 		      auto gp = ptcls.grd_to_ptcl.at(icell->get_global_cell_idx ())[ip];
-		      ptcls.dprops["Fric_px"][gp] = 0.0 * ptcls.dprops["Ap"][gp] *  ptcls.dprops["Fb_x"][gp]  ; // - ptcls.dprops["Mp"][gp] *    9.81 * ptcls.dprops["dZxp"][gp] + ptcls.dprops["Ap"][gp] * ptcls.dprops["Fb_x"][gp]  ;
-		      ptcls.dprops["Fric_py"][gp] = 0.0 * ptcls.dprops["Ap"][gp] * ptcls.dprops["Fb_y"][gp]  ;//  - ptcls.dprops["Mp"][gp] *    9.81 * ptcls.dprops["dZyp"][gp]  + ptcls.dprops["Ap"][gp] *  ptcls.dprops["Fb_y"][gp]  ;
+		      ptcls.dprops["Fric_px"][gp] = 1.0 * ptcls.dprops["Ap"][gp] *  ptcls.dprops["Fb_x"][gp]  ; // - ptcls.dprops["Mp"][gp] *    9.81 * ptcls.dprops["dZxp"][gp] + ptcls.dprops["Ap"][gp] * ptcls.dprops["Fb_x"][gp]  ;
+		      ptcls.dprops["Fric_py"][gp] = 1.0 * ptcls.dprops["Ap"][gp] * ptcls.dprops["Fb_y"][gp]  ;//  - ptcls.dprops["Mp"][gp] *    9.81 * ptcls.dprops["dZyp"][gp]  + ptcls.dprops["Ap"][gp] *  ptcls.dprops["Fb_y"][gp]  ;
 		     }
 	     }
 
@@ -470,10 +471,10 @@ ptcls.dprops["Vp"][ip] = ptcls.dprops["hp"][ip] * ptcls.dprops["Ap"][ip];
     {
             norm_v[ip] = std::sqrt(ptcls.dprops["vpx"][ip] * ptcls.dprops["vpx"][ip] + ptcls.dprops["vpy"][ip] * ptcls.dprops["vpy"][ip] );
 
-            ptcls.dprops["Fb_x"][ip] = ptcls.dprops["hp"][ip] > 1.e-3 ?  - 0.0 * 2.5 * (  data.rho * ptcls.dprops["hp"][ip] * data.g * std::tan(fric_ang)  +
+            ptcls.dprops["Fb_x"][ip] = ptcls.dprops["hp"][ip] > 1.e-3 ?  - 1.0 * 2.5 * (  data.rho * ptcls.dprops["hp"][ip] * data.g * std::tan(fric_ang)  +
                                            data.rho * data.g * ptcls.dprops["vpx"][ip] * ptcls.dprops["vpx"][ip]  / 100.)* ptcls.dprops["vpx"][ip] / (norm_v[ip] + 0.001) : 0.0 ;
 
-            ptcls.dprops["Fb_y"][ip] = ptcls.dprops["hp"][ip] > 1.e-3 ? - 0.0 * 2.5 * (data.rho * ptcls.dprops["hp"][ip] * data.g * std::tan(fric_ang)  +
+            ptcls.dprops["Fb_y"][ip] = ptcls.dprops["hp"][ip] > 1.e-3 ? - 1.0 * 2.5 * (data.rho * ptcls.dprops["hp"][ip] * data.g * std::tan(fric_ang)  +
                                            data.rho * data.g * ptcls.dprops["vpy"][ip] * ptcls.dprops["vpy"][ip]  / 100.)  * ptcls.dprops["vpy"][ip] / (norm_v[ip] + 0.001) : 0.0 ;
     }
 
@@ -532,7 +533,7 @@ ptcls.dprops["Vp"][ip] = ptcls.dprops["hp"][ip] * ptcls.dprops["Ap"][ip];
           sig_xy[ip] = invII[ip] != 0 ? (2000./std::sqrt(invII[ip]) + 2. * 50.) * D_xy[ip] : 0.0;
           sig_yy[ip] = invII[ip] != 0 ? (2000./std::sqrt(invII[ip]) + 2. * 50.) * D_yy[ip] : 0.0;
 
-          double cc = 0.0;
+          double cc = 1.0;
 
 		      ptcls.dprops["F_11"][ip] =  cc * sig_xx[ip] - 0.5 * data.rho * data.g *  (ptcls.dprops["hp"][ip]  ) ;
 		      ptcls.dprops["F_12"][ip] =  cc * sig_xy[ip] ;
