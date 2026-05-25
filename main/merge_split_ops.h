@@ -22,6 +22,9 @@ struct ms_config {
   int call_interval = 10; /// Execute merge/split every N time steps
   int min_level = -2;     /// Don't split below this level (finer bound)
   int max_level = 2;      /// Don't merge above this level (coarser bound)
+
+  double hp_min = 0.05;    /// Trigger to prevent numerical fractures
+  double max_dv = 0.2;    /// Velocity tolerance to conserve energy
 };
 
 enum action_t : int {
@@ -360,14 +363,18 @@ inline void decide_actions(const particles_t &ptcls,
   const idx_t* level_vec = ptcls.iprops.at("level").data();
   const double* px = ptcls.x.data();
   const double* py = ptcls.y.data();
+  const double* vpx_vec = ptcls.dprops.at("vpx").data();
+  const double* vpy_vec = ptcls.dprops.at("vpy").data();
+  const double* hp_vec = ptcls.dprops.at("hp").data();
   #pragma omp target teams distribute parallel for \
-    map(to: Ap_vec[0:N_p], elfs[0:N_p], level_vec[0:N_p], px[0:N_p], py[0:N_p]) \
+    map(to: Ap_vec[0:N_p], elfs[0:N_p], level_vec[0:N_p], px[0:N_p], py[0:N_p], hp_vec[0:N_p]) \
     map(tofrom: act[0:N_p])
   for (idx_t ip = 0; ip < N_p; ++ip) {
     const double r_i = std::sqrt(Ap_vec[ip]);
     const double elfs_i = elfs[ip];
+    const double hp_i = hp_vec[ip];
 
-    if (elfs_i < alpha * r_i) {
+    if (elfs_i < alpha * r_i || hp_i < cfg.hp_min) {
       if (level_vec[ip] > min_level) act[ip] = SPLIT;
     } else if (elfs_i > beta * r_i) {
       if (level_vec[ip] < max_level) act[ip] = MERGE_PRIMARY;
@@ -417,7 +424,10 @@ inline void decide_actions(const particles_t &ptcls,
         double dx = ptcls.x[i1] - ptcls.x[i2];
         double dy = ptcls.y[i1] - ptcls.y[i2];
         double d2 = dx * dx + dy * dy;
-        if (d2 < best_dist) {
+        double dvx = vpx_vec[i1] - vpx_vec[i2];
+        double dvy = vpy_vec[i1] - vpy_vec[i2];
+        double dv2 = dvx * dvx + dvy * dvy;
+        if (d2 < best_dist && dv2 < cfg.max_dv * cfg.max_dv) {
           best_dist = d2;
           best_j = j;
         }
@@ -469,7 +479,7 @@ inline void execute_merge_split(particles_t &ptcls,
 
   // estimate the new size and save offsets to parallelize the loop
   std::vector<int> offsets(N_p, 0);
-  const int weights[] = {1, 2, 1, 0};
+  const int weights[] = {1, 4, 1, 0};
   
   int exact_est = 0;
   // rearrange the arithmetic to avoid branch in the loop
@@ -557,6 +567,8 @@ inline void execute_merge_split(particles_t &ptcls,
     } else if (actions[i] == SPLIT) {
       int out1 = offsets[i];
       int out2 = offsets[i] + 1;
+      int out3 = offsets[i] + 2;
+      int out4 = offsets[i] + 3;
       idx_t level = in_ip_ptrs[ip_idx[e_level]][i];
       
       double px = ptcls.x[i];
@@ -564,53 +576,61 @@ inline void execute_merge_split(particles_t &ptcls,
       double r_i = std::sqrt(in_dp_ptrs[dp_idx[e_Ap]][i]);
       double offset_dist = r_i / (2.0 * min_h);
 
-      double x1 = px - offset_dist, x2 = px + offset_dist;
-      double y1 = py - offset_dist, y2 = py + offset_dist;
+      double x[4] = {px + offset_dist, px + offset_dist, px - offset_dist, px - offset_dist};
+      double y[4] = {py + offset_dist, py - offset_dist, py + offset_dist, py - offset_dist};
 
       // If horizontal split goes out of bounds, try vertical
-      if (x1 < 1e-10 || x1 > ncols * hx - 1e-10)
-        x1 = std::max(1e-10, std::min(ncols * hx - 1e-10, x1));
-      if (x2 < 1e-10 || x2 > ncols * hx - 1e-10)
-        x2 = std::max(1e-10, std::min(ncols * hx - 1e-10, x2));
-      if (y1 < 1e-10 || y1 > nrows * hy - 1e-10)
-        y1 = std::max(1e-10, std::min(nrows * hy - 1e-10, y1));
-      if (y2 < 1e-10 || y2 > nrows * hy - 1e-10)
-        y2 = std::max(1e-10, std::min(nrows * hy - 1e-10, y2));
+      for (int k = 0; k < 4; ++k) {
+        if (x[k] < 1e-10 || x[k] > ncols * hx - 1e-10)
+          x[k] = std::max(1e-10, std::min(ncols * hx - 1e-10, x[k]));
+        if (y[k] < 1e-10 || y[k] > nrows * hy - 1e-10)
+          y[k] = std::max(1e-10, std::min(nrows * hy - 1e-10, y[k]));
+      }
 
-      new_x[out1] = x1; new_y[out1] = y1;
-      new_x[out2] = x2; new_y[out2] = y2;
+      new_x[out1] = x[0]; new_y[out1] = y[0];
+      new_x[out2] = x[1]; new_y[out2] = y[1];
+      new_x[out3] = x[2]; new_y[out3] = y[2];
+      new_x[out4] = x[3]; new_y[out4] = y[3];
 
       // Copy all properties to children (halving extensive ones)
       for (int k = 0; k < num_dp; ++k) {
-        double val = in_dp_ptrs[k][i] / (is_ext[k] ? 2.0 : 1.0);
+        double val = in_dp_ptrs[k][i] / (is_ext[k] ? 4.0 : 1.0);
         out_dp_ptrs[k][out1] = val;
         out_dp_ptrs[k][out2] = val;
+        out_dp_ptrs[k][out3] = val;
+        out_dp_ptrs[k][out4] = val;
       }
       for (int k = 0; k < num_ip; ++k) {
         out_ip_ptrs[k][out1] = in_ip_ptrs[k][i];
         out_ip_ptrs[k][out2] = in_ip_ptrs[k][i];
+        out_ip_ptrs[k][out3] = in_ip_ptrs[k][i];
+        out_ip_ptrs[k][out4] = in_ip_ptrs[k][i];
       }
 
       // helper functions to update specific physical properties
-      auto set_dp = [&](int e, double v1, double v2) { if (dp_idx[e] >= 0) { out_dp_ptrs[dp_idx[e]][out1] = v1; out_dp_ptrs[dp_idx[e]][out2] = v2; } };
-      auto set_ip = [&](int e, idx_t v1, idx_t v2)   { if (ip_idx[e] >= 0) { out_ip_ptrs[ip_idx[e]][out1] = v1; out_ip_ptrs[ip_idx[e]][out2] = v2; } };
+      auto set_dp = [&](int e, double v1, double v2, double v3, double v4) { if (dp_idx[e] >= 0) { out_dp_ptrs[dp_idx[e]][out1] = v1; out_dp_ptrs[dp_idx[e]][out2] = v2; out_dp_ptrs[dp_idx[e]][out3] = v3; out_dp_ptrs[dp_idx[e]][out4] = v4; } };
+      auto set_ip = [&](int e, idx_t v1, idx_t v2, idx_t v3, idx_t v4)   { if (ip_idx[e] >= 0) { out_ip_ptrs[ip_idx[e]][out1] = v1; out_ip_ptrs[ip_idx[e]][out2] = v2; out_ip_ptrs[ip_idx[e]][out3] = v3; out_ip_ptrs[ip_idx[e]][out4] = v4; } };
 
-      set_dp(e_xp, x1, x2);
-      set_dp(e_yp, y1, y2);
+      set_dp(e_xp, x[0], x[1], x[2], x[3]);
+      set_dp(e_yp, y[0], y[1], y[2], y[3]);
       
       if (dp_idx[e_mom_px] >= 0) {
         double p1 = out_dp_ptrs[dp_idx[e_Mp]][out1] * out_dp_ptrs[dp_idx[e_vpx]][out1];
         double p2 = out_dp_ptrs[dp_idx[e_Mp]][out2] * out_dp_ptrs[dp_idx[e_vpx]][out2];
-        set_dp(e_mom_px, p1, p2);
+        double p3 = out_dp_ptrs[dp_idx[e_Mp]][out3] * out_dp_ptrs[dp_idx[e_vpx]][out3];
+        double p4 = out_dp_ptrs[dp_idx[e_Mp]][out4] * out_dp_ptrs[dp_idx[e_vpx]][out4];
+        set_dp(e_mom_px, p1, p2, p3, p4);
       }
       if (dp_idx[e_mom_py] >= 0) {
         double p1 = out_dp_ptrs[dp_idx[e_Mp]][out1] * out_dp_ptrs[dp_idx[e_vpy]][out1];
         double p2 = out_dp_ptrs[dp_idx[e_Mp]][out2] * out_dp_ptrs[dp_idx[e_vpy]][out2];
-        set_dp(e_mom_py, p1, p2);
+        double p3 = out_dp_ptrs[dp_idx[e_Mp]][out3] * out_dp_ptrs[dp_idx[e_vpy]][out3];
+        double p4 = out_dp_ptrs[dp_idx[e_Mp]][out4] * out_dp_ptrs[dp_idx[e_vpy]][out4];
+        set_dp(e_mom_py, p1, p2, p3, p4);
       }
 
-      set_ip(e_level, level - 1, level - 1);
-      set_ip(e_label, -1, -1);
+      set_ip(e_level, level - 1, level - 1, level -1, level -1);
+      set_ip(e_label, -1, -1, -1, -1);
 
     } else if (actions[i] == MERGE_PRIMARY) {
       int j = merge_partner[i];
