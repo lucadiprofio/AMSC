@@ -26,7 +26,7 @@ h = 0*Zplot;
 Ymin = 0; Ymax = 10; Xmin = 0; Xmax = 10;
 select = (yv>Ymin & yv<Ymax & xv >Xmin & xv < Xmax);
 
-[gx,gy] = gradient(Zplot);
+[gx,gy] = gradient(Zplot, hl(1), hl(2));
 
 X = xv; Y = yv;
 h= 10 - Zplot;
@@ -112,15 +112,18 @@ Mp    = Msys/nmp * ones(nmp, 1);
 Vp    = Mp./rhosy;
 Ap    = Vp./hp;
 vp    = zeros (nmp,2);
-BINGHAM = 0;
-FRICTION = 0;
-CFL = 0.1;
-BC_FLAG = 0;
 
 momp  = zeros (nmp,2);
 
 Fb(:,1) = zeros (nmp,1);
 Fb(:,2) = zeros (nmp,1);
+
+BINGHAM = 0.0;
+FRICTION = 0.0;
+CFL = 0.1;
+BC_FLAG = 0.0;
+
+eq_level = 10.0;
 
 %%
 DATA = struct (
@@ -150,9 +153,9 @@ DATA = struct (
 	   "BINGHAM_ON", BINGHAM, ...
        "FRICTION_ON", FRICTION, ...
        "CFL", CFL, ...
-       "BC_FLAG",BC_FLAG
+       "BC_FLAG", BC_FLAG, ...
+	   "eq_level", eq_level
 	 );
-	 
 % --- Scrittura manuale del DATA.json ---
 function v2j (fid, name, x, last)
   if isscalar(x) && ~ischar(x)
@@ -177,31 +180,34 @@ endfunction
 
 FID = fopen("DATA.json","w");
 fprintf(FID, "{\n");
-v2j(FID, "x",          xp,         false);
-v2j(FID, "y",          yp,         false);
-v2j(FID, "Mp",         Mp,         false);
-v2j(FID, "Ap",         Ap,         false);
-v2j(FID, "vpx",        vp(:,1),    false);
-v2j(FID, "vpy",        vp(:,2),    false);
-v2j(FID, "Nex",        nEx,        false);
-v2j(FID, "Ney",        nEy,        false);
-v2j(FID, "hx",         hl(1),      false);
-v2j(FID, "hy",         hl(2),      false);
-v2j(FID, "hp",         hp,         false);
-v2j(FID, "mom_px",     momp(:,1),  false);
-v2j(FID, "mom_py",     momp(:,2),  false);
-v2j(FID, "g",          g,          false);
-v2j(FID, "T",          T,          false);
-v2j(FID, "xi",         xi,         false);
-v2j(FID, "rho",        rhosy,      false);
-v2j(FID, "Vp",         Vp,         false);
-v2j(FID, "Z",          Z,          false);
-v2j(FID, "dZdx",       dZdx,       false);
-v2j(FID, "dZdy",       dZdy,       false);
-v2j(FID, "BC_FLAG",    0,          false);
-v2j(FID, "CFL",        0.1,        false);
-v2j(FID, "BINGHAM_ON", 0,          false);
-v2j(FID, "FRICTION_ON",0,          true);
+v2j(FID, "x",           xp,         false);
+v2j(FID, "y",           yp,         false);
+v2j(FID, "Mp",          Mp,         false);
+v2j(FID, "Ap",          Ap,         false);
+v2j(FID, "vpx",         vp(:,1),    false);
+v2j(FID, "vpy",         vp(:,2),    false);
+v2j(FID, "Nex",         Nex,        false);
+v2j(FID, "Ney",         Ney,        false);
+v2j(FID, "hx",          hl(1),      false);
+v2j(FID, "hy",          hl(2),      false);
+v2j(FID, "hp",          hp,         false);
+v2j(FID, "mom_px",      momp(:,1),  false);
+v2j(FID, "mom_py",      momp(:,2),  false);
+v2j(FID, "g",           g,          false);
+v2j(FID, "T",           T,          false);
+v2j(FID, "xi",          xi,         false);
+v2j(FID, "vis",         vis,        false);
+v2j(FID, "ty",          ty,         false);
+v2j(FID, "rho",         rhosy,      false);
+v2j(FID, "Vp",          Vp,         false);
+v2j(FID, "Z",           Z,          false);
+v2j(FID, "dZdx",        dZdx,       false);
+v2j(FID, "dZdy",        dZdy,       false);
+v2j(FID, "BC_FLAG",    BC_FLAG,           false);
+v2j(FID, "CFL",        CFL,           false);
+v2j(FID, "BINGHAM_ON", BINGHAM,           false);
+v2j(FID, "eq_level",eq_level,           false); 
+v2j(FID, "FRICTION_ON",FRICTION,           true);
 fprintf(FID, "}\n");
 fclose(FID);
 disp("DATA.json scritto correttamente");
