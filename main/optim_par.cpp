@@ -273,8 +273,7 @@ int main ()
         cel = std::abs(max_vel);
 
         if (it > 0)
-            dt=dt = 1.0e-3;
-          //dt = data.CFL * data.hx / (1e-2 + cel);
+        dt = data.CFL * data.hx / (1e-2 + cel);
         std::cout << "time = " << t << "  " << " dt = " <<  dt << std::endl;
         std::cout << "cel = " << cel << std::endl;
         my_timer.toc ("update dt");
@@ -286,7 +285,7 @@ int main ()
 #ifdef USE_COMPRESSION
 	filename = filename + ".gz";
 #endif
-        if (it % 100 == 0)
+        if (it % 10 == 0)
           {
 #ifdef USE_COMPRESSION
 	    boost::iostreams::filtering_ostream OF;
@@ -391,8 +390,8 @@ int main ()
         transform (policy, vars["F_ext_vx"].begin (), vars["F_ext_vx"].end (), vars["F_int_vx"].begin (), vars["Ftot_vx"].begin (), std::minus<double> ());
         transform (policy, vars["F_ext_vy"].begin (), vars["F_ext_vy"].end (), vars["F_int_vy"].begin (), vars["Ftot_vy"].begin (), std::minus<double> ());
 
-        transform (policy, vars["Ftot_vx"].begin (), vars["Ftot_vx"].end (), vars["Ftot_vx"].begin (), vars["mom_vx"].begin (), [=] (double x, double y) { return dt*x + y; });
-        transform (policy, vars["Ftot_vy"].begin (), vars["Ftot_vy"].end (), vars["Ftot_vy"].begin (), vars["mom_vy"].begin (), [=] (double x, double y) { return dt*x + y; });
+        transform (policy, vars["Ftot_vx"].begin (), vars["Ftot_vx"].end (), vars["mom_vx"].begin (), vars["mom_vx"].begin (), [=] (double x, double y) { return dt*x + y; });
+        transform (policy, vars["Ftot_vy"].begin (), vars["Ftot_vy"].end (), vars["mom_vy"].begin (), vars["mom_vy"].begin (), [=] (double x, double y) { return dt*x + y; });
 
         my_timer.toc ("step 3");
 
@@ -464,6 +463,15 @@ int main ()
         transform (policy, ptcls.x.begin (), ptcls.x.end (),  ptcls.dprops["vpx"].begin (), ptcls.x.begin (), [=] (double x, double y) { return x + dt * y; } );
         transform (policy, ptcls.y.begin (), ptcls.y.end (),  ptcls.dprops["vpy"].begin (), ptcls.y.begin (), [=] (double x, double y) { return x + dt * y; } );
 
+        double eps = 1e-10;
+        double Lx = data.Nex * data.hx;
+        double Ly = data.Ney * data.hy;
+        for (idx_t ip = 0; ip < ptcls.num_particles; ++ip) {
+          if (ptcls.x[ip] < eps) ptcls.x[ip] = eps;
+          if (ptcls.x[ip] > Lx - eps) ptcls.x[ip] = Lx - eps;
+          if (ptcls.y[ip] < eps) ptcls.y[ip] = eps;
+          if (ptcls.y[ip] > Ly - eps) ptcls.y[ip] = Ly - eps;
+        }
 
         my_timer.toc ("step 6b");
 
@@ -491,13 +499,26 @@ int main ()
 
         // (7b) UPDATE FRICTIONS
         my_timer.tic ("step 7b");
-        transform (policy, ptcls.dprops["vpx"].begin (), ptcls.dprops["vpx"].end (), ptcls.dprops["vpy"].begin (), norm_v.begin (), [] (double x, double y) { return std::sqrt (x*x + y*y); });
+         for (idx_t ip = 0; ip < ptcls.num_particles; ++ip) {
+          double vx = ptcls.dprops["vpx"][ip];
+          double vy = ptcls.dprops["vpy"][ip];
+          double h = ptcls.dprops["hp"][ip];
+          double nv = std::sqrt(vx*vx + vy*vy);
+          if (data.FRICTION_ON > 0 && nv > 1e-10 && data.xi > 0) {
+            ptcls.dprops["Fb_x"][ip] = data.FRICTION_ON * (data.rho * data.g * h * std::tan(fric_ang) + data.rho * data.g * vx * vx / data.xi) * vx / nv;
+            ptcls.dprops["Fb_y"][ip] = data.FRICTION_ON * (data.rho * data.g * h * std::tan(fric_ang) + data.rho * data.g * vy * vy / data.xi) * vy / nv;
+          } else {
+            ptcls.dprops["Fb_x"][ip] = 0.0;
+            ptcls.dprops["Fb_y"][ip] = 0.0;
+          }
+        }
+        /*transform (policy, ptcls.dprops["vpx"].begin (), ptcls.dprops["vpx"].end (), ptcls.dprops["vpy"].begin (), norm_v.begin (), [] (double x, double y) { return std::sqrt (x*x + y*y); });
         transform (policy, ptcls.dprops["vpx"].begin (), ptcls.dprops["vpx"].end (), ptcls.dprops["hp"].begin (),  ptcls.dprops["Fb_x"].begin (),
                    [&] (double x, double y) { return  data.FRICTION_ON *  ( data.rho * data.g * y * std::tan(fric_ang) + data.rho * data.g * x * x  / data.xi) * x; });
         transform (policy, ptcls.dprops["Fb_x"].begin (), ptcls.dprops["Fb_x"].end (), norm_v.begin (), ptcls.dprops["Fb_x"].begin (), std::divides<double> ());
         transform (policy, ptcls.dprops["vpy"].begin (), ptcls.dprops["vpy"].end (), ptcls.dprops["hp"].begin (),  ptcls.dprops["Fb_y"].begin (),
                    [&] (double x, double y) { return   data.FRICTION_ON *  ( data.rho * data.g * y * std::tan(fric_ang) + data.rho * data.g * x * x  / data.xi) * x; }); //data.rho * data.g * ( y * std::tan(fric_ang) + x * x  / data.xi) * x
-        transform (policy, ptcls.dprops["Fb_y"].begin (), ptcls.dprops["Fb_y"].end (), norm_v.begin (), ptcls.dprops["Fb_y"].begin (), std::divides<double> ());
+        transform (policy, ptcls.dprops["Fb_y"].begin (), ptcls.dprops["Fb_y"].end (), norm_v.begin (), ptcls.dprops["Fb_y"].begin (), std::divides<double> ());*/
         my_timer.toc ("step 7b");
 
 
@@ -525,16 +546,16 @@ int main ()
         my_timer.toc ("p2g");
 
 
-        // my_timer.tic ("save vts");
-        // filename = "nc_grid_";
-        // filename = filename + std::to_string (it);
-        // filename = filename + ".vts";
-        // if (it % 250 == 0) {
-        //  grid.vtk_export(filename.c_str(), Plotvars);
-        //  grid.vtk_export(filename.c_str(), vars);
-        // }
+         my_timer.tic ("save vts");
+         filename = "nc_grid_";
+         filename = filename + std::to_string (it);
+         filename = filename + ".vts";
+        if (it % 10 == 0) {
+          grid.vtk_export(filename.c_str(), Plotvars);
+          grid.vtk_export(filename.c_str(), vars);
+         }
         t +=dt;
-        // my_timer.toc ("save vts");
+         my_timer.toc ("save vts");
 
         //my_timer.print_report ();
     //    if (it % 3000 == 0) break;
