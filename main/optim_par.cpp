@@ -250,7 +250,7 @@ int main ()
 
     ptcls.build_mass();
     grid.vtk_export("GRID_forZ.vts", vars);
-    dt = 1.0e-5;
+    dt = 1.0e-3;
     std::vector<idx_t> ordering (ptcls.num_particles);
 
     while (t < data.T) //data.T
@@ -273,7 +273,8 @@ int main ()
         cel = std::abs(max_vel);
 
         if (it > 0)
-          dt = data.CFL * data.hx / (1e-2 + cel);
+            dt=dt = 1.0e-3;
+          //dt = data.CFL * data.hx / (1e-2 + cel);
         std::cout << "time = " << t << "  " << " dt = " <<  dt << std::endl;
         std::cout << "cel = " << cel << std::endl;
         my_timer.toc ("update dt");

@@ -127,7 +127,7 @@ int main() {
     ptcls.dprops["F_11"][ip] = 0.5 * data.rho * data.g * (ptcls.dprops["hp"][ip] - ptcls.dprops["H"][ip]*ptcls.dprops["H"][ip]/ptcls.dprops["hp"][ip]);
     ptcls.dprops["F_12"][ip] = 0.0;
     ptcls.dprops["F_21"][ip] = 0.0;
-    ptcls.dprops["F_11"][ip] = 0.5 * data.rho * data.g * (ptcls.dprops["hp"][ip] - ptcls.dprops["H"][ip]*ptcls.dprops["H"][ip]/ptcls.dprops["hp"][ip]);    
+    ptcls.dprops["F_22"][ip] = 0.5 * data.rho * data.g * (ptcls.dprops["hp"][ip] - ptcls.dprops["H"][ip]*ptcls.dprops["H"][ip]/ptcls.dprops["hp"][ip]);    
   }
 
   int it = 0;
@@ -205,6 +205,12 @@ int main() {
   double* d_vvxL = vars["vvxL"].data();
   double* d_vvyL = vars["vvyL"].data();
   double* d_H = ptcls.dprops["H"].data();
+  double* d_HV = vars["HV"].data();
+  double* d_pv_rho = Plotvars["rho_v"].data();
+  double* d_pv_vvx = Plotvars["vvx"].data();
+  double* d_pv_vvy = Plotvars["vvy"].data();
+  double* d_pv_avx = Plotvars["avx"].data();
+  double* d_pv_avy = Plotvars["avy"].data();
 
   const double A_coeff = 3.0 / 2.0;
   const double C_coeff = 65.0 / 32.0;
@@ -327,8 +333,21 @@ int main() {
       cell_start.resize(ncells + 1);
       cell_ptcls.resize(np);
 
+      // Clamp particelle dopo merge/split
+      double eps = 1e-10;
+      double Lx = ncols * hx;
+      double Ly = nrows * hy;
+      for (int ip = 0; ip < np; ip++) {
+        if (d_x[ip] < eps) d_x[ip] = eps;
+        if (d_x[ip] > Lx - eps) d_x[ip] = Lx - eps;
+        if (d_y[ip] < eps) d_y[ip] = eps;
+        if (d_y[ip] > Ly - eps) d_y[ip] = Ly - eps;
+      }
+
       ptcls.init_particle_mesh();
+      d_p2g = ptcls.ptcl_to_grd.data();
       my_timer.toc("merge_split");
+
     }
 
     my_timer.tic("build_colors");
@@ -412,7 +431,8 @@ int main() {
             d_Ftot_vx[0 : nn], d_Ftot_vy[0 : nn], d_avx[0 : nn],               \
             d_avy[0 : nn], d_vvx[0 : nn], d_vvy[0 : nn], d_Fric_x[0 : nn],     \
             d_Fric_y[0 : nn], d_Fpx[0 : np], d_Fpy[0 : np], d_vpxL[0 : np],    \
-            d_vpyL[0 : np],  d_FPxv[0 : nn], d_FPyv[0 : nn], d_vvxL[0 : nn],  d_vvyL[0 : nn], d_H[0:np])
+            d_vpyL[0 : np],  d_FPxv[0 : nn], d_FPyv[0 : nn], d_vvxL[0 : nn],  d_vvyL[0 : nn], d_H[0:np], \
+          d_pv_rho[0:nn], d_pv_vvx[0:nn], d_pv_vvy[0:nn], d_pv_avx[0:nn], d_pv_avy[0:nn],d_HV[0:nn] )
       {
 
 // TODO: is necessary to write update and not simply tofrom mapping?
@@ -504,8 +524,8 @@ for (int ip = 0; ip < np; ip++) {
 #pragma omp target teams distribute parallel for
         for (int ip = 0; ip < np; ip++) {
           // TODO: why no friction?
-          d_Fric_px[ip] = 0.0 * d_Ap[ip] * d_Fb_x[ip];
-          d_Fric_py[ip] = 0.0 * d_Ap[ip] * d_Fb_y[ip];
+          d_Fric_px[ip] = d_Ap[ip] * d_Fb_x[ip];
+          d_Fric_py[ip] = d_Ap[ip] * d_Fb_y[ip];
         }
 
         // STEP 2b: P2G friction
@@ -787,47 +807,108 @@ if (bc_flag){
           d_hpZ[ip] = d_hp[ip] + zp;
         }
 
+// Plotvars P2G: accumulo — per-cell coloring
+for (int color = 0; color < 4; color++) {
+    int cstart = color_cell_offsets[color];
+    int cend   = color_cell_offsets[color + 1];
+    if (cend == cstart) continue;
+
+    #pragma omp target teams distribute parallel for
+    for (int ic = cstart; ic < cend; ic++) {
+        int cell = d_ccidx[ic];
+        int r = cell % nrows;
+        int c = cell / nrows;
+
+        for (int jp = d_cstart[cell]; jp < d_cstart[cell + 1]; jp++) {
+            int ip = d_cptcls[jp];
+            double xx = d_x[ip], yy = d_y[ip];
+            for (int in = 0; in < 4; in++) {
+                double N = shp(xx, yy, in, c, r, hx, hy);
+                int nidx = gt(in, c, r, nrows);
+                d_pv_rho[nidx] += N * d_Mp[ip];
+                d_pv_vvx[nidx] += N * d_vpx[ip];
+                d_pv_vvy[nidx] += N * d_vpy[ip];
+                d_pv_avx[nidx] += N * d_apx[ip];
+                d_pv_avy[nidx] += N * d_apy[ip];
+            }
+        }
+    }
+}
+
+// Plotvars: normalizzazione per massa
+#pragma omp target teams distribute parallel for
+for (int iv = 0; iv < nn; iv++) {
+    double mv = d_pv_rho[iv];
+    if (mv > 1e-8) {
+        d_pv_vvx[iv] /= mv;
+        d_pv_vvy[iv] /= mv;
+        d_pv_avx[iv] /= mv;
+        d_pv_avy[iv] /= mv;
+    }
+}
+
+// Step 8b: P2G hp → HV — per-cell coloring
+for (int color = 0; color < 4; color++) {
+    int cstart = color_cell_offsets[color];
+    int cend   = color_cell_offsets[color + 1];
+    if (cend == cstart) continue;
+
+    #pragma omp target teams distribute parallel for
+    for (int ic = cstart; ic < cend; ic++) {
+        int cell = d_ccidx[ic];
+        int r = cell % nrows;
+        int c = cell / nrows;
+
+        for (int jp = d_cstart[cell]; jp < d_cstart[cell + 1]; jp++) {
+            int ip = d_cptcls[jp];
+            double xx = d_x[ip], yy = d_y[ip];
+            for (int in = 0; in < 4; in++) {
+                double N = shp(xx, yy, in, c, r, hx, hy);
+                int nidx = gt(in, c, r, nrows);
+                d_HV[nidx] += N * d_hp[ip];
+            }
+        }
+    }
+}
+
       } // end target data
     }
 
-    // TODO: no sense?
-    // if (it <= 3) {
-    //   double sum_Mv = 0, max_vpx = 0, max_Fint = 0, max_hp = 0;
-    //   for (int i = 0; i < nn; i++)
-    //     sum_Mv += d_Mv[i];
-    //   for (int i = 0; i < np; i++) {
-    //     if (std::abs(d_vpx[i]) > max_vpx)
-    //       max_vpx = std::abs(d_vpx[i]);
-    //     if (d_hp[i] > max_hp)
-    //       max_hp = d_hp[i];
-    //   }
-    //   for (int i = 0; i < nn; i++)
-    //     if (std::abs(d_F_int_vx[i]) > max_Fint)
-    //       max_Fint = std::abs(d_F_int_vx[i]);
-    //   std::cout << "[DIAG it=" << it << "] sum_Mv=" << sum_Mv
-    //             << " max_vpx=" << max_vpx << " max_Fint=" << max_Fint
-    //             << " max_hp=" << max_hp << std::endl;
-    // }
 
     my_timer.toc("gpu_block");
     std::cout << "  Done." << std::endl;
+
+     // Clamp posizioni prima del Plotvars P2G (CPU)
+    {
+      double eps = 1e-10;
+      double Lx = ncols * hx;
+      double Ly = nrows * hy;
+      for (int ip = 0; ip < np; ip++) {
+        if (d_x[ip] < eps) d_x[ip] = eps;
+        if (d_x[ip] > Lx - eps) d_x[ip] = Lx - eps;
+        if (d_y[ip] < eps) d_y[ip] = eps;
+        if (d_y[ip] > Ly - eps) d_y[ip] = Ly - eps;
+      }
+    }
+    ptcls.init_particle_mesh();
+
+    d_p2g = ptcls.ptcl_to_grd.data();
+
+    // Diagnostica: verifica
+    {
+      int bad = 0;
+      for (int ip = 0; ip < np; ip++)
+        if (d_p2g[ip] < 0 || d_p2g[ip] >= ncells) bad++;
+      if (bad > 0) std::cout << "  BAD after clamp: " << bad << std::endl;
+    }
+
 
      std::cout << "  max_vpx=" << *std::max_element(d_vpx, d_vpx+np)
               << " max_hp=" << *std::max_element(d_hp, d_hp+np)
               << " min_hp=" << *std::min_element(d_hp, d_hp+np) << std::endl;
     std::cout << "  Plotvars P2G..." << std::flush;
 
-    // plotting
-    ptcls.p2g(
-        Plotvars, std::vector<std::string>{"Mp", "vpx", "vpy", "apx", "apy"},
-        std::vector<std::string>{"rho_v", "vvx", "vvy", "avx", "avy"}, true);
-
     std::cout << "done. step8b..." << std::flush;
-
-    my_timer.tic("step 8b");
-    ptcls.p2g(vars, std::vector<std::string>{"hp"},
-              std::vector<std::string>{"HV"});
-    my_timer.toc("step 8b");
     
     if (it % 10 == 0) {
       my_timer.tic("save vts");
