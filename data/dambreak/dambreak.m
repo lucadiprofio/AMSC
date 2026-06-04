@@ -58,7 +58,7 @@ immagine_out = uint16(Z);
 
 
 Zz        = double (Z);
-[gx, gy]  = gradient (Zz);
+[gx, gy]  = gradient (Zz, hx, hy);
 
 Z    = Zz(:);
 dZdx = gx(:);
@@ -89,8 +89,9 @@ Ap    = Vp./hp;
 vp    = zeros (nmp,2);
 BINGHAM = 0.0;
 FRICTION = 0.0;
-CFL = 0.001;
+CFL = 0.2;
 BC_FLAG = 1.0;
+eq_level = 0.0;
 momp  = zeros (nmp,2);
 
 Fb(:,1) = zeros (nmp,1);
@@ -119,12 +120,13 @@ DATA = struct (
 	   "rho", rhosy, ...
 	   "Vp", Vp, ...
 	   "Z", Z, ...
-	   "dZdx", dZdx,
-	   "dZdy", dZdy,
-     "BINGHAM_ON", BINGHAM,
-     "FRICTION_ON", FRICTION,
-     "CFL", CFL,
-     "BC_FLAG",BC_FLAG
+	   "dZdx", dZdx, ...
+	   "dZdy", dZdy, ...
+     "BINGHAM_ON", BINGHAM, ...
+     "FRICTION_ON", FRICTION, ...
+     "CFL", CFL, ...
+     "BC_FLAG",BC_FLAG, ...
+	 "eq_level", eq_level
 	 );
 % --- Scrittura manuale del DATA.json ---
 function v2j (fid, name, x, last)
@@ -174,6 +176,7 @@ v2j(FID, "dZdy",       dZdy,       false);
 v2j(FID, "BINGHAM_ON", BINGHAM,    false);
 v2j(FID, "FRICTION_ON",FRICTION,   false);
 v2j(FID, "CFL",        CFL,        false);
+v2j(FID, "eq_level",eq_level,           false); 
 v2j(FID, "BC_FLAG",    BC_FLAG,    true);
 fprintf(FID, "}\n");
 fclose(FID);

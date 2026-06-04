@@ -185,7 +185,7 @@ int main ()
 
 	    if (it > 0)
 	      //dt = 0.2* data.hx / (1e-2 + cel); // 0.7      0.2 *  data.hx / (1e-4 + cel);
-        dt = dt = 1.0e-5;
+        dt = 1.0e-5;
 	      std::cout << "time = " << t << "  " << " dt = " <<  dt << std::endl;
     my_timer.toc ("update dt");
 
