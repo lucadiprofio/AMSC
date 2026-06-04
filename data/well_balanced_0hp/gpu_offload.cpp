@@ -125,7 +125,8 @@ int main() {
 
     double hp_val = ptcls.dprops["hp"][ip];
     double H_val = ptcls.dprops["H"][ip];
-    double h_corr = hp_val > 1e-10 ? hp_val - H_val*H_val/hp_val : 0.0;
+    double H_eff = (H_val < hp_val) ? H_val : hp_val;
+    double h_corr = hp_val > 1e-10 ? hp_val - H_eff*H_eff/hp_val : 0.0;
     // init forces
     ptcls.dprops["F_11"][ip] = 0.5 * data.rho * data.g * h_corr;
     ptcls.dprops["F_12"][ip] = 0.0;
@@ -518,11 +519,10 @@ int main() {
 // Gravity force along slope
 #pragma omp target teams distribute parallel for
 for (int ip = 0; ip < np; ip++) {
+    double H_eff = (d_H[ip] < d_hp[ip]) ? d_H[ip] : d_hp[ip];
     double ratio = d_hp[ip] > 1e-10 ? d_H[ip] / d_hp[ip] : 0.0;
     d_Fpx[ip] = -g_c * d_Mp[ip] * (1.0 - ratio) * d_dZxp[ip];
     d_Fpy[ip] = -g_c * d_Mp[ip] * (1.0 - ratio) * d_dZyp[ip];
-    d_Fpx[ip] = 0.0;
-    d_Fpy[ip] = 0.0;
 }
 
 // STEP 2a: Fric_px/py per-particle
@@ -747,13 +747,9 @@ if (bc_flag){
 
           // sc -> 1.0 + trace of axial deformations
           double sc = 1.0 + dt * (vxdx + vydy);
-          if (sc < 0.1) sc = 0.1;
           d_hp[ip] /= sc;
-          //if (d_hp[ip] < 1e-6) d_hp[ip] = 1e-6;
-          //d_Vp[ip] /= sc;
-          if (d_Vp[ip] < 1e-10) d_Vp[ip] = 1e-10;
+          d_Vp[ip] /= sc;
           d_Ap[ip] = d_Vp[ip] / d_hp[ip];
-          
           d_mom_px[ip] = d_vpx[ip] * d_Mp[ip];
           d_mom_py[ip] = d_vpy[ip] * d_Mp[ip];
         }
@@ -792,6 +788,7 @@ if (bc_flag){
           double inv2 = 0.5 * (Dxx * Dxx + Dyy * Dyy + Dzz * Dzz + Dzx * Dzx +
                                Dzy * Dzy + Dxy * Dxy);
           double coeff = inv2 != 0.0 ? (tau_Y / sqrt(inv2) + 2.0 * mu) : 0.0;
+          double H_eff = (d_H[ip] < h) ? d_H[ip] : h;
           double h_corr = h > 1e-10 ? h - d_H[ip]*d_H[ip]/h : 0.0;
           d_F11[ip] = cc * coeff * Dxx + 0.5 * rho * g_c * h_corr;
           d_F22[ip] = cc * coeff * Dyy + 0.5 * rho * g_c * h_corr;
