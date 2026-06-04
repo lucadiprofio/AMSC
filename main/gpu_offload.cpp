@@ -521,8 +521,8 @@ for (int ip = 0; ip < np; ip++) {
     double ratio = d_hp[ip] > 1e-10 ? d_H[ip] / d_hp[ip] : 0.0;
     d_Fpx[ip] = -g_c * d_Mp[ip] * (1.0 - ratio) * d_dZxp[ip];
     d_Fpy[ip] = -g_c * d_Mp[ip] * (1.0 - ratio) * d_dZyp[ip];
-    d_Fpx[ip] = 0.0;
-    d_Fpy[ip] = 0.0;
+    // d_Fpx[ip] = 0.0;
+    // d_Fpy[ip] = 0.0;
 }
 
 // STEP 2a: Fric_px/py per-particle
@@ -712,14 +712,14 @@ if (bc_flag){
           d_vpxL[ip] = vxL;
           d_vpyL[ip] = vyL;
 
-          // Clamp positions to grid bounds
-          double eps = 1e-10;
-          double Lx = ncols * hx;
-          double Ly = nrows * hy;
-          if (d_x[ip] < eps) d_x[ip] = eps;
-          if (d_x[ip] > Lx - eps) d_x[ip] = Lx - eps;
-          if (d_y[ip] < eps) d_y[ip] = eps;
-          if (d_y[ip] > Ly - eps) d_y[ip] = Ly - eps;
+          // // Clamp positions to grid bounds
+          // double eps = 1e-10;
+          // double Lx = ncols * hx;
+          // double Ly = nrows * hy;
+          // if (d_x[ip] < eps) d_x[ip] = eps;
+          // if (d_x[ip] > Lx - eps) d_x[ip] = Lx - eps;
+          // if (d_y[ip] < eps) d_y[ip] = eps;
+          // if (d_y[ip] > Ly - eps) d_y[ip] = Ly - eps;
 
         }
 
