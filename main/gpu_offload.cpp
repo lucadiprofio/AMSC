@@ -710,14 +710,14 @@ if (bc_flag){
           d_vpxL[ip] = vxL;
           d_vpyL[ip] = vyL;
 
-          // Clamp positions to grid bounds
-          double eps = 1e-10;
-          double Lx = ncols * hx;
-          double Ly = nrows * hy;
-          if (d_x[ip] < eps) d_x[ip] = eps;
-          if (d_x[ip] > Lx - eps) d_x[ip] = Lx - eps;
-          if (d_y[ip] < eps) d_y[ip] = eps;
-          if (d_y[ip] > Ly - eps) d_y[ip] = Ly - eps;
+          // // Clamp positions to grid bounds
+          // double eps = 1e-10;
+          // double Lx = ncols * hx;
+          // double Ly = nrows * hy;
+          // if (d_x[ip] < eps) d_x[ip] = eps;
+          // if (d_x[ip] > Lx - eps) d_x[ip] = Lx - eps;
+          // if (d_y[ip] < eps) d_y[ip] = eps;
+          // if (d_y[ip] > Ly - eps) d_y[ip] = Ly - eps;
 
         }
 
