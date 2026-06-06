@@ -30,3 +30,5 @@ Thumbs.db
 
 # Octave history
 .octave_hist
+
+data/*/*.txt
