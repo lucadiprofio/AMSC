@@ -71,7 +71,7 @@ int main() {
   double t = 0.0;
   double dt;
   double cel; // max velocity
-  double fric_ang = 34. * M_PI / 180.;
+  double fric_ang = 12. * M_PI / 180.; //34. * M_PI / 180.;
 
   // for each property we have a vector with the values associated to each node
   // of the grid
@@ -125,8 +125,7 @@ int main() {
 
     double hp_val = ptcls.dprops["hp"][ip];
     double H_val = ptcls.dprops["H"][ip];
-    double H_eff = (H_val < hp_val) ? H_val : hp_val;
-    double h_corr = hp_val > 1e-10 ? hp_val - H_eff*H_eff/hp_val : 0.0;
+    double h_corr = hp_val > 1e-10 ? hp_val - H_val*H_val/hp_val : 0.0;
     // init forces
     ptcls.dprops["F_11"][ip] = 0.5 * data.rho * data.g * h_corr;
     ptcls.dprops["F_12"][ip] = 0.0;
@@ -218,8 +217,8 @@ int main() {
 
   const double A_coeff = 3.0 / 2.0;
   const double C_coeff = 65.0 / 32.0;
-  const double mu = 50.0;
-  const double tau_Y = 2000.0;
+  const double mu = 10.0; //50.0;
+  const double tau_Y = 30.0; //2000.0;
   const double cc = data.BINGHAM_ON;
   const double fric_on = data.FRICTION_ON;
   const double xi_coeff = data.xi;
@@ -263,11 +262,11 @@ int main() {
       my_timer.tic("save csv");
       std::string filename = "nc_particles_" + std::to_string(it++) + ".csv";
       if (t >= 0.0) {
-        if(it%10==0){
+        //if(it%10==0){
           std::ofstream OF(filename.c_str());
           ptcls.print<particles_t::output_format::csv>(OF);
           OF.close();
-        }
+        //}
       }
       my_timer.toc("save csv");
   
@@ -519,7 +518,6 @@ int main() {
 // Gravity force along slope
 #pragma omp target teams distribute parallel for
 for (int ip = 0; ip < np; ip++) {
-    double H_eff = (d_H[ip] < d_hp[ip]) ? d_H[ip] : d_hp[ip];
     double ratio = d_hp[ip] > 1e-10 ? d_H[ip] / d_hp[ip] : 0.0;
     d_Fpx[ip] = -g_c * d_Mp[ip] * (1.0 - ratio) * d_dZxp[ip];
     d_Fpy[ip] = -g_c * d_Mp[ip] * (1.0 - ratio) * d_dZyp[ip];
@@ -747,9 +745,13 @@ if (bc_flag){
 
           // sc -> 1.0 + trace of axial deformations
           double sc = 1.0 + dt * (vxdx + vydy);
+          if (sc < 0.1) sc = 0.1;
           d_hp[ip] /= sc;
-          d_Vp[ip] /= sc;
+          //if (d_hp[ip] < 1e-6) d_hp[ip] = 1e-6;
+          //d_Vp[ip] /= sc;
+          if (d_Vp[ip] < 1e-10) d_Vp[ip] = 1e-10;
           d_Ap[ip] = d_Vp[ip] / d_hp[ip];
+          
           d_mom_px[ip] = d_vpx[ip] * d_Mp[ip];
           d_mom_py[ip] = d_vpy[ip] * d_Mp[ip];
         }
@@ -760,8 +762,8 @@ if (bc_flag){
           double vx = d_vpx[ip], vy = d_vpy[ip], h = d_hp[ip];
           double nv = sqrt(vx * vx + vy * vy); // ||v||
           if (fric_on > 0 && nv > 1e-10 && xi_coeff > 0) {
-            d_Fb_x[ip] = fric_on * (rho * g_c * h * tan_fa + rho * g_c * vx * vx / xi_coeff) * vx / nv;
-            d_Fb_y[ip] = fric_on * (rho * g_c * h * tan_fa + rho * g_c * vy * vy / xi_coeff) * vy / nv;
+            d_Fb_x[ip] = -fric_on * (rho * g_c * h * tan_fa + rho * g_c * vx * vx / xi_coeff) * vx / nv;
+            d_Fb_y[ip] = -fric_on * (rho * g_c * h * tan_fa + rho * g_c * vy * vy / xi_coeff) * vy / nv;
           } else {
               d_Fb_x[ip] = 0.0;
               d_Fb_y[ip] = 0.0;
@@ -788,7 +790,6 @@ if (bc_flag){
           double inv2 = 0.5 * (Dxx * Dxx + Dyy * Dyy + Dzz * Dzz + Dzx * Dzx +
                                Dzy * Dzy + Dxy * Dxy);
           double coeff = inv2 != 0.0 ? (tau_Y / sqrt(inv2) + 2.0 * mu) : 0.0;
-          double H_eff = (d_H[ip] < h) ? d_H[ip] : h;
           double h_corr = h > 1e-10 ? h - d_H[ip]*d_H[ip]/h : 0.0;
           d_F11[ip] = cc * coeff * Dxx + 0.5 * rho * g_c * h_corr;
           d_F22[ip] = cc * coeff * Dyy + 0.5 * rho * g_c * h_corr;

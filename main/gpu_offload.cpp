@@ -71,7 +71,7 @@ int main() {
   double t = 0.0;
   double dt;
   double cel; // max velocity
-  double fric_ang = 34. * M_PI / 180.;
+  double fric_ang = 12. * M_PI / 180.; //34. * M_PI / 180.;
 
   // for each property we have a vector with the values associated to each node
   // of the grid
@@ -217,8 +217,8 @@ int main() {
 
   const double A_coeff = 3.0 / 2.0;
   const double C_coeff = 65.0 / 32.0;
-  const double mu = 50.0;
-  const double tau_Y = 2000.0;
+  const double mu = 10.0; //50.0;
+  const double tau_Y = 30.0; //2000.0;
   const double cc = data.BINGHAM_ON;
   const double fric_on = data.FRICTION_ON;
   const double xi_coeff = data.xi;
@@ -521,8 +521,6 @@ for (int ip = 0; ip < np; ip++) {
     double ratio = d_hp[ip] > 1e-10 ? d_H[ip] / d_hp[ip] : 0.0;
     d_Fpx[ip] = -g_c * d_Mp[ip] * (1.0 - ratio) * d_dZxp[ip];
     d_Fpy[ip] = -g_c * d_Mp[ip] * (1.0 - ratio) * d_dZyp[ip];
-    d_Fpx[ip] = 0.0;
-    d_Fpy[ip] = 0.0;
 }
 
 // STEP 2a: Fric_px/py per-particle
@@ -764,8 +762,8 @@ if (bc_flag){
           double vx = d_vpx[ip], vy = d_vpy[ip], h = d_hp[ip];
           double nv = sqrt(vx * vx + vy * vy); // ||v||
           if (fric_on > 0 && nv > 1e-10 && xi_coeff > 0) {
-            d_Fb_x[ip] = fric_on * (rho * g_c * h * tan_fa + rho * g_c * vx * vx / xi_coeff) * vx / nv;
-            d_Fb_y[ip] = fric_on * (rho * g_c * h * tan_fa + rho * g_c * vy * vy / xi_coeff) * vy / nv;
+            d_Fb_x[ip] = -fric_on * (rho * g_c * h * tan_fa + rho * g_c * vx * vx / xi_coeff) * vx / nv;
+            d_Fb_y[ip] = -fric_on * (rho * g_c * h * tan_fa + rho * g_c * vy * vy / xi_coeff) * vy / nv;
           } else {
               d_Fb_x[ip] = 0.0;
               d_Fb_y[ip] = 0.0;
