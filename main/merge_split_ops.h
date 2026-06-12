@@ -22,6 +22,7 @@ struct ms_config {
   int call_interval = 10; /// Execute merge/split every N time steps
   int min_level = -2;     /// Don't split below this level (finer bound)
   int max_level = 2;      /// Don't merge above this level (coarser bound)
+  int min_particles_per_cell = 2;
 
   double hp_min = 0.05;    /// Trigger to prevent numerical fractures
   double max_dv = 0.2;    /// Velocity tolerance to conserve energy
@@ -347,6 +348,7 @@ inline void decide_actions(const particles_t &ptcls,
   const double hx = ptcls.grid.hx();
   const double hy = ptcls.grid.hy();
   const double min_h = std::min(hx, hy);
+  const double hp_min = cfg.hp_min;
   const int ncols = ptcls.grid.num_cols();
   const int nrows = ptcls.grid.num_rows();
 
@@ -374,9 +376,9 @@ inline void decide_actions(const particles_t &ptcls,
     const double elfs_i = elfs[ip];
     const double hp_i = hp_vec[ip];
 
-    if (elfs_i < alpha * r_i || hp_i < cfg.hp_min) {
+    if (elfs_i < alpha * r_i ) {
       if (level_vec[ip] > min_level) act[ip] = SPLIT;
-    } else if (elfs_i > beta * r_i) {
+    } else if (elfs_i > beta * r_i && hp_i > hp_min) {
       if (level_vec[ip] < max_level) act[ip] = MERGE_PRIMARY;
     }
     // else: KEEP
@@ -395,7 +397,7 @@ inline void decide_actions(const particles_t &ptcls,
         else
           actions[pidx] = KEEP; // cap reached
       }
-  }
+    }
 
     // Collect merge candidates in this cell
     std::vector<idx_t> candidates;
@@ -450,6 +452,37 @@ inline void decide_actions(const particles_t &ptcls,
     for (std::size_t i = 0; i < candidates.size(); ++i) {
       if (!paired[i]) actions[candidates[i]] = KEEP;
     }
+
+    // Remaining unpaired candidates → demote to KEEP
+    for (std::size_t i = 0; i < candidates.size(); ++i) {
+      if (!paired[i]) actions[candidates[i]] = KEEP;
+    }
+
+    // Enforce minimum particles per cell
+    int projected = 0;
+    for (auto pidx : ptcl_list) {
+      if (actions[pidx] == KEEP) projected += 1;
+      else if (actions[pidx] == SPLIT) projected += 4;   // 1→4 split
+      else if (actions[pidx] == MERGE_PRIMARY) projected += 1;  // 2→1
+      // MERGE_SECONDARY contributes 0 (absorbed)
+    }
+    while (projected < 2) {
+      bool found = false;
+      for (auto pidx : ptcl_list) {
+        if (actions[pidx] == MERGE_PRIMARY) {
+          idx_t partner = merge_partner[pidx];
+          if (partner >= 0) actions[partner] = KEEP;
+          merge_partner[pidx] = -1;
+          actions[pidx] = KEEP;
+          n_merges--;
+          projected += 1;
+          found = true;
+          break;
+        }
+      }
+      if (!found) break;
+    }
+
   }
 
   // // 4. Sanitize: Ensure no MERGE_PRIMARY is left without a partner!
