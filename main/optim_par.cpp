@@ -37,6 +37,7 @@ struct stress_tensor_t {
   const std::vector<double>& vpx;
   const std::vector<double>& vpy;
   const std::vector<double>& hp;
+  const std::vector<double>& H;
   const std::vector<double>& vpx_dx;
   const std::vector<double>& vpy_dy;
   const std::vector<double>& vpx_dy;
@@ -51,6 +52,7 @@ struct stress_tensor_t {
     vpx{ptcls.dprops.at ("vpx")},
     vpy{ptcls.dprops.at ("vpy")},
     hp{ptcls.dprops.at ("hp")},
+    H{ptcls.dprops.at ("H")},
     vpx_dx{ptcls.dprops.at ("vpx_dx")},
     vpy_dy{ptcls.dprops.at ("vpy_dy")},
     vpx_dy{ptcls.dprops.at ("vpx_dy")},
@@ -104,10 +106,12 @@ struct stress_tensor_t {
     sig_xy = invII != 0 ? (2000./std::sqrt(invII) + 2. * 50.) * D_xy : 0.0;
     sig_yy = invII != 0 ? (2000./std::sqrt(invII) + 2. * 50.) * D_yy : 0.0;
 
-    F_11[ip] =  BING * sig_xx - .5 * data.rho * data.g *  (hp[ip]);
+    double H_term = (H[ip] * H[ip]) / (hp[ip] + 1e-6);
+
+    F_11[ip] =  BING * sig_xx - .5 * data.rho * data.g *  (hp[ip] - H_term);
     F_12[ip] =  BING * sig_xy;
     F_21[ip] =  BING * sig_xy;
-    F_22[ip] =  BING * sig_yy - .5 * data.rho * data.g *  (hp[ip]);
+    F_22[ip] =  BING * sig_yy - .5 * data.rho * data.g *  (hp[ip] - H_term);
 
   }
 
@@ -133,7 +137,7 @@ int main ()
                          "Vp","F_ext_px","F_ext_py","apx","apy",
                          "F_11","F_12","F_21","F_22","vpx_dx","vpx_dy",
                          "vpy_dx","vpy_dy","Fb_x","Fb_y","hpZ","dZxp","dZyp",
-                         "Zp","xp","yp","Fric_px","Fric_py","Fpx","Fpy","vpxL","vpyL"},
+                         "Zp","xp","yp","Fric_px","Fric_py","Fpx","Fpy","vpxL","vpyL", "H"},
                      grid, data.x, data.y);
 
   ptcls.dprops["Mp"] = data.Mp;
@@ -237,13 +241,17 @@ int main ()
 
     for (idx_t ip = 0; ip < num_particles; ++ip) {
       ptcls.dprops["hpZ"][ip] = ptcls.dprops["hp"][ip] + ptcls.dprops["Zp"][ip];
+
+      ptcls.dprops["H"][ip] = 10.0 - ptcls.dprops["Zp"][ip];
     }
 
     for (idx_t ip = 0; ip<num_particles; ++ip)  {
-      ptcls.dprops["F_11"][ip] =   .5 * data.rho * data.g *   (ptcls.dprops["hp"][ip]   ) ;
+
+      double H_term = (ptcls.dprops["H"][ip] * ptcls.dprops["H"][ip]) / (ptcls.dprops["hp"][ip] + 1e-6);
+      ptcls.dprops["F_11"][ip] =   .5 * data.rho * data.g *   (ptcls.dprops["hp"][ip]   - H_term) ;
       ptcls.dprops["F_12"][ip] = 0.0;
       ptcls.dprops["F_21"][ip] = 0.0;
-      ptcls.dprops["F_22"][ip] =  .5 * data.rho * data.g *   (ptcls.dprops["hp"][ip] );
+      ptcls.dprops["F_22"][ip] =  .5 * data.rho * data.g *   (ptcls.dprops["hp"][ip] - H_term);
     }
 
     int it = 0;
@@ -252,6 +260,10 @@ int main ()
     grid.vtk_export("GRID_forZ.vts", vars);
     dt = 1.0e-3;
     std::vector<idx_t> ordering (ptcls.num_particles);
+
+    // Inizializzazione file per gli errori di conservazione
+    std::ofstream err_file("conservation_errors.csv");
+    err_file << "time,err_mass,err_mom\n";
 
     while (t < data.T) //data.T
       {
@@ -353,14 +365,69 @@ int main ()
         my_timer.toc ("g2pd");
 
 
+        // ==========================================
+        // TEST CONSERVAZIONE MASSA E MOMENTO (L-inf)
+        // ==========================================
+        double total_mass_particles = 0.0;
+        double total_mom_px_particles = 0.0;
+        double total_mom_py_particles = 0.0;
+
+        for (idx_t ip = 0; ip < ptcls.num_particles; ++ip) {
+            total_mass_particles += ptcls.dprops["Mp"][ip];
+            total_mom_px_particles += ptcls.dprops["mom_px"][ip];
+            total_mom_py_particles += ptcls.dprops["mom_py"][ip];
+        }
+
+        double total_mass_nodes = 0.0;
+        double total_mom_px_nodes = 0.0;
+        double total_mom_py_nodes = 0.0;
+
+        for (idx_t in = 0; in < grid.num_global_nodes(); ++in) {
+            total_mass_nodes += vars["Mv"][in];
+            total_mom_px_nodes += vars["mom_vx"][in];
+            total_mom_py_nodes += vars["mom_vy"][in];
+        }
+
+// Calcolo dell'errore RELATIVO (Normalizzato)
+        double err_mass = std::abs(total_mass_particles - total_mass_nodes) / total_mass_particles;
+        
+        // Per il momento, usiamo un denominatore sicuro per evitare divisioni per zero a t=0 (quando la frana è ferma)
+        double norm_mom = std::max(1.0, std::max(std::abs(total_mom_px_particles), std::abs(total_mom_py_particles)));
+        
+        double err_mom_x = std::abs(total_mom_px_particles - total_mom_px_nodes) / norm_mom;
+        double err_mom_y = std::abs(total_mom_py_particles - total_mom_py_nodes) / norm_mom;
+        
+        // Norma L-infinito del momento 
+        double err_mom = std::max(err_mom_x, err_mom_y);
+
+        // Salvataggio su file CSV (a ogni iterazione)
+        err_file << t << "," << err_mass << "," << err_mom << "\n";
+
+        // Stampa a schermo (solo ogni 100 iterazioni per non spammare)
+        if (it % 100 == 0) {
+            std::cout << "[Test] t = " << t << " | Err Massa: " << err_mass 
+                      << " | Err Momento: " << err_mom << std::endl;
+        }
+        // ==========================================
+
         // (2)  EXTERNAL FORCES ON VERTICES (P2G)
         my_timer.tic ("step 2a");
-        transform (policy, ptcls.dprops["Vp"].begin (), ptcls.dprops["Vp"].end (),
-                   ptcls.dprops["dZxp"].begin (),ptcls.dprops["Fpx"].begin (),
-                   [&] (double vp, double gzx) { return - data.g * vp * data.rho * gzx; });
-        transform (policy, ptcls.dprops["Vp"].begin (), ptcls.dprops["Vp"].end (),
-                   ptcls.dprops["dZyp"].begin (),ptcls.dprops["Fpy"].begin (),
-                   [&] (double vp, double gzy) { return - data.g * vp *  data.rho * gzy; });
+        auto& Vp = ptcls.dprops.at("Vp");
+        auto& dZxp = ptcls.dprops.at("dZxp");
+        auto& dZyp = ptcls.dprops.at("dZyp");
+        auto& Fpx = ptcls.dprops.at("Fpx");
+        auto& Fpy = ptcls.dprops.at("Fpy");
+        auto& hp = ptcls.dprops.at("hp");
+        auto& H = ptcls.dprops.at("H");
+
+        for_each(policy, ptcls.iprops["label"].begin(), ptcls.iprops["label"].end(), [=, &Vp, &dZxp, &dZyp, &Fpx, &Fpy, &hp, &H, &data](int ip) {
+            
+            // Fattore di bilanciamento. Se H = 0 (frana normale), il moltiplicatore è 1.0.
+            double wb_factor = 1.0 - (H[ip] / (hp[ip] + 1e-6));
+            
+            Fpx[ip] = -data.g * Vp[ip] * data.rho * dZxp[ip] * wb_factor;
+            Fpy[ip] = -data.g * Vp[ip] * data.rho * dZyp[ip] * wb_factor;
+        });
 
         transform (policy, ptcls.dprops["Ap"].begin (), ptcls.dprops["Ap"].end (), ptcls.dprops["Fb_x"].begin (),
                    ptcls.dprops["Fric_px"].begin (), std::multiplies<double> ());
@@ -418,8 +485,9 @@ int main ()
                 {
                   for (idx_t inode = 0; inode < 4; ++inode)
                   {
-                    //vars["avx"][icell->gt(inode)] = 0.0;
-                  //  vars["vvx"][icell->gt(inode)] = 0.0;
+                    vars["avx"][icell->gt(inode)] = 0.0;
+                    vars["vvx"][icell->gt(inode)] = 0.0;
+                    vars["vvxL"][icell->gt(inode)] = 0.0; // <- Il VERO blocco per il metodo PIC
                     vars["mom_vx"][icell->gt(inode)] = 0.0;
                   }
                 }
@@ -427,42 +495,40 @@ int main ()
                   {
                    for (idx_t inode = 0; inode < 4; ++inode)
                   {
-                  //  vars["avy"][icell->gt(inode)] = 0.0;
-                  //  vars["vvy"][icell->gt(inode)] = 0.0;
+                    vars["avy"][icell->gt(inode)] = 0.0;
+                    vars["vvy"][icell->gt(inode)] = 0.0;
+                    vars["vvyL"][icell->gt(inode)] = 0.0; // <- Il VERO blocco per il metodo PIC                    
                     vars["mom_vy"][icell->gt(inode)] = 0.0;
                   }
               }
           }
         }
         my_timer.toc ("step 5");
-
-        // (6) RETURN TO POINTS (G2P) and UPDATE POS AND VEL ON PARTICLES
+// (6) RETURN TO POINTS (G2P) and UPDATE POS AND VEL ON PARTICLES
         my_timer.tic ("step 6");
-        ptcls.dprops.at("vpx").assign(ptcls.num_particles, 0.0);
-        ptcls.dprops.at("vpy").assign(ptcls.num_particles, 0.0);
+        // Non ci serve più la storia precedente per il FLIP, implementiamo il PIC puro.
+        ptcls.dprops.at("vpxL").assign(ptcls.num_particles, 0.0);
+        ptcls.dprops.at("vpyL").assign(ptcls.num_particles, 0.0);
         ptcls.dprops.at("apx").assign(ptcls.num_particles, 0.0);
         ptcls.dprops.at("apy").assign(ptcls.num_particles, 0.0);
         my_timer.toc ("step 6");
 
         my_timer.tic ("g2p");
-        ptcls.g2p (vars, {"vvx","vvy","avx","avy","vvxL","vvyL"}, {"vpx","vpy","apx","apy","vpxL","vpyL"});
+        // Mappiamo le velocità aggiornate (vvxL, vvyL) dalla griglia alle particelle (vpxL, vpyL)
+        ptcls.g2p (vars, {"vvxL","vvyL","avx","avy"}, {"vpxL","vpyL","apx","apy"});
         my_timer.toc ("g2p");
-        // if (it > 0) {
-        //   for (auto const & iiii : vars.at ("avx")) {
-        //     std::cout << iiii << std::endl;
-        //   }
 
-        //   assert (false);
-        // }
-        my_timer.tic ("step 6b");  // dt * apx * 0.95 + .05 * vpxL
+        my_timer.tic ("step 6b");  
+        
+        // PIC Puro come prescritto a pagina 6, equazione 33 del paper
+        transform (policy, ptcls.dprops["vpxL"].begin (), ptcls.dprops["vpxL"].end (), ptcls.dprops["vpx"].begin (), [] (double x) { return x; } );
+        transform (policy, ptcls.dprops["vpyL"].begin (), ptcls.dprops["vpyL"].end (), ptcls.dprops["vpy"].begin (), [] (double x) { return x; } );
 
-        transform (policy, ptcls.dprops["vpx"].begin (), ptcls.dprops["vpx"].end (),  ptcls.dprops["apx"].begin (), ptcls.dprops["vpx"].begin (), [=] (double x, double y) { return x +  dt * y ; } );
-        transform (policy, ptcls.dprops["vpy"].begin (), ptcls.dprops["vpy"].end (),  ptcls.dprops["apy"].begin (), ptcls.dprops["vpy"].begin (), [=] (double x, double y) { return x +  dt * y ; } );
-
-
+        // Aggiornamento delle posizioni (Eq 35 del paper)
         transform (policy, ptcls.x.begin (), ptcls.x.end (),  ptcls.dprops["vpx"].begin (), ptcls.x.begin (), [=] (double x, double y) { return x + dt * y; } );
         transform (policy, ptcls.y.begin (), ptcls.y.end (),  ptcls.dprops["vpy"].begin (), ptcls.y.begin (), [=] (double x, double y) { return x + dt * y; } );
 
+        // Gestione dei bordi (evita che le particelle escano dal dominio)
         double eps = 1e-10;
         double Lx = data.Nex * data.hx;
         double Ly = data.Ney * data.hy;
@@ -472,17 +538,20 @@ int main ()
           if (ptcls.y[ip] < eps) ptcls.y[ip] = eps;
           if (ptcls.y[ip] > Ly - eps) ptcls.y[ip] = Ly - eps;
         }
-
         my_timer.toc ("step 6b");
 
         // (7) COMPUTE HEIGHT WITH STRAIN (divergence of velocities)
         my_timer.tic ("step 7a");
         ptcls.dprops.at("vpx_dx").assign(ptcls.num_particles, 0.0);
         ptcls.dprops.at("vpy_dy").assign(ptcls.num_particles, 0.0);
+        // FIX 1: Azzeriamo anche le derivate di taglio per evitare l'esplosione dello stress!
+        ptcls.dprops.at("vpx_dy").assign(ptcls.num_particles, 0.0);
+        ptcls.dprops.at("vpy_dx").assign(ptcls.num_particles, 0.0);
         my_timer.toc ("step 7a");
 
         my_timer.tic ("g2pd");
-        ptcls.g2pd (vars, {"vvx","vvy"}, {"vpx_dx","vpy_dx"}, {"vpx_dy","vpy_dy"});
+        // FIX 2: Usiamo vvxL e vvyL (velocità aggiornate) come richiede l'Equazione 36 del paper
+        ptcls.g2pd (vars, {"vvxL","vvyL"}, {"vpx_dx","vpy_dx"}, {"vpx_dy","vpy_dy"});
         my_timer.toc ("g2pd");
 
         my_timer.tic ("step 7");
