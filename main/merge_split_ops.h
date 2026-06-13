@@ -23,9 +23,10 @@ struct ms_config {
   int min_level = -2;     /// Don't split below this level (finer bound)
   int max_level = 2;      /// Don't merge above this level (coarser bound)
   int min_particles_per_cell = 2;
+  double stretch_thresh = 0.5; /// [NUOVO] Trigger cinematico (Divergenza massima tollerata)
 
   double hp_min = 0.05;    /// Trigger to prevent numerical fractures
-  double max_dv = 0.2;    /// Velocity tolerance to conserve energy
+  double max_dv = 0.01;    /// Velocity tolerance to conserve energy
 };
 
 enum action_t : int {
@@ -368,15 +369,19 @@ inline void decide_actions(const particles_t &ptcls,
   const double* vpx_vec = ptcls.dprops.at("vpx").data();
   const double* vpy_vec = ptcls.dprops.at("vpy").data();
   const double* hp_vec = ptcls.dprops.at("hp").data();
+  const double* vpx_dx_vec = ptcls.dprops.at("vpx_dx").data();
+  const double* vpy_dy_vec = ptcls.dprops.at("vpy_dy").data();
   #pragma omp target teams distribute parallel for \
-    map(to: Ap_vec[0:N_p], elfs[0:N_p], level_vec[0:N_p], px[0:N_p], py[0:N_p], hp_vec[0:N_p]) \
+    map(to: Ap_vec[0:N_p], elfs[0:N_p], level_vec[0:N_p], px[0:N_p], py[0:N_p], hp_vec[0:N_p], vpx_dx_vec[0:N_p], vpy_dy_vec[0:N_p]) \
     map(tofrom: act[0:N_p])
   for (idx_t ip = 0; ip < N_p; ++ip) {
     const double r_i = std::sqrt(Ap_vec[ip]);
     const double elfs_i = elfs[ip];
     const double hp_i = hp_vec[ip];
 
-    if (elfs_i < alpha * r_i ) {
+    const double divergence = vpx_dx_vec[ip] + vpy_dy_vec[ip];
+
+    if ((elfs_i < alpha * r_i ) || (divergence > cfg.stretch_thresh)) {
       if (level_vec[ip] > min_level) act[ip] = SPLIT;
     } else if (elfs_i > beta * r_i && hp_i > hp_min) {
       if (level_vec[ip] < max_level) act[ip] = MERGE_PRIMARY;
@@ -607,7 +612,7 @@ inline void execute_merge_split(particles_t &ptcls,
       double px = ptcls.x[i];
       double py = ptcls.y[i];
       double r_i = std::sqrt(in_dp_ptrs[dp_idx[e_Ap]][i]);
-      double offset_dist = r_i / (2.0 * min_h);
+      double offset_dist = r_i / (2.0);
 
       double x[4] = {px + offset_dist, px + offset_dist, px - offset_dist, px - offset_dist};
       double y[4] = {py + offset_dist, py - offset_dist, py + offset_dist, py - offset_dist};

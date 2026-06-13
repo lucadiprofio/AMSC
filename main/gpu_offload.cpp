@@ -674,9 +674,15 @@ if (bc_flag){
               // TODO: why not to use the method defined in quadgrid_cpp_imp.h??
               if (c == 0 || c == 1 || c == ncols - 1 || c == ncols) {
                 d_mom_vx[iv] = 0.0;
+                d_vvx[iv] = 0.0;
+                d_vvxL[iv] = 0.0;
+                d_avx[iv] = 0.0;
               }
               if (r == 0 || r == 1 || r == nrows - 1 || r == nrows) {
                 d_mom_vy[iv] = 0.0;
+                d_vvy[iv] = 0.0;
+                d_vvyL[iv] = 0.0;
+                d_avy[iv] = 0.0;
               }
             }
 }
@@ -688,25 +694,25 @@ if (bc_flag){
           int ci = d_p2g[ip];
           int r = gind2row(ci, nrows);
           int c = gind2col(ci, nrows);
-          double vx = 0, vy = 0, ax = 0, ay = 0, vxL = 0, vyL = 0;
+          double ax = 0, ay = 0, vxL = 0, vyL = 0;
           for (int in = 0; in < 4; in++) {
             double N = shp(xx, yy, in, c, r, hx, hy);
             int nidx = gt(in, c, r, nrows);
-            vx += N * d_vvx[nidx];
-            vy += N * d_vvy[nidx];
             ax += N * d_avx[nidx];
             ay += N * d_avy[nidx];
             vxL += N * d_vvxL[nidx];
             vyL += N * d_vvyL[nidx];
           }
-          vx += dt * ax;
-          vy += dt * ay;
-          d_vpx[ip] = vx;
-          d_vpy[ip] = vy;
+          
+          // Metodo PIC Puro per stabilità (risolve le fratture a strisce)
+          d_vpx[ip] = vxL;
+          d_vpy[ip] = vyL;
           d_apx[ip] = ax;
           d_apy[ip] = ay;
-          d_x[ip] += dt * vx;
-          d_y[ip] += dt * vy;
+          
+          d_x[ip] += dt * vxL;
+          d_y[ip] += dt * vyL;
+          
           d_vpxL[ip] = vxL;
           d_vpyL[ip] = vyL;
 
@@ -733,10 +739,10 @@ if (bc_flag){
             double Nx = shg(xx, yy, 0, in, c, r, hx, hy);
             double Ny = shg(xx, yy, 1, in, c, r, hx, hy);
             int nidx = gt(in, c, r, nrows);
-            vxdx += Nx * d_vvx[nidx];
-            vxdy += Ny * d_vvx[nidx];
-            vydx += Nx * d_vvy[nidx];
-            vydy += Ny * d_vvy[nidx];
+            vxdx += Nx * d_vvxL[nidx];
+            vxdy += Ny * d_vvxL[nidx];
+            vydx += Nx * d_vvyL[nidx];
+            vydy += Ny * d_vvyL[nidx];
           }
           d_vpx_dx[ip] = vxdx;
           d_vpx_dy[ip] = vxdy;
