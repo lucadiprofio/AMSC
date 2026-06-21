@@ -339,7 +339,7 @@ template <typename idx_t>
 inline void decide_actions(const particles_t &ptcls,
                            const std::vector<double> &elfs_values,
                            const ms_config &cfg, std::vector<action_t> &actions,
-                           std::vector<idx_t> &merge_partner) {
+                           std::vector<int> &merge_partner) {
   // comodity variables
   double alpha = cfg.alpha;
   double beta = cfg.beta;
@@ -451,11 +451,6 @@ inline void decide_actions(const particles_t &ptcls,
       } else {
         actions[i1] = KEEP; // no partner found
       }
-    }
-
-    // Remaining unpaired candidates → demote to KEEP
-    for (std::size_t i = 0; i < candidates.size(); ++i) {
-      if (!paired[i]) actions[candidates[i]] = KEEP;
     }
 
     // Remaining unpaired candidates → demote to KEEP
@@ -727,7 +722,7 @@ inline void adaptive_merge_split(particles_t &ptcls, const ms_config &cfg) {
 
   // decide actions
   std::vector<action_t> actions;
-  std::vector<idx_t> merge_partner;
+  std::vector<int> merge_partner;
   decide_actions<idx_t>(ptcls, elfs_values, cfg, actions, merge_partner);
 
   // quick exit if nothing to do

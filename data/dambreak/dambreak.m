@@ -40,7 +40,7 @@ DX = .5; DY = .5;
 
 %hp = interp2 (X, Y, h, xp, yp, 'spline');
 hp = 5.*ones(size(xp));
-hp(xp > 50) = 0;
+hp(xp<1 | xp > 50) = 0;
 hp = hp(:);
 xp = xp(:);
 yp = yp(:);
@@ -77,7 +77,7 @@ g     = 9.81;
 xi    = 200;
 vis   = 50;
 ty    = 2000;
-T     = 10;
+T     = 8;
 
 %% Material point quantities initialization
 nmp   = numel(xp);

@@ -75,8 +75,13 @@ struct stress_tensor_t {
 
     nrm = std::sqrt(vpx[ip] * vpx[ip] +vpy[ip] * vpy[ip] );
 
+    //CAMBIARE QUI IN BASE AL TEST mu=50 e tau=2000
+    //TODO AGGIUNGERE PARAMETRI DAL JSON COSI VALE PER TUTTO
+    double mu= 50.0;
+    double tau_Y=2000.0;
+
     ALF = hp[ip] > 1.e-3
-      ? (6. * 50. * nrm)/((hp[ip]+0.001) * 2000.)
+      ? (6. * mu * nrm)/((hp[ip]+0.001) * tau_Y)
       : 0.0;
     B = -114./32. - ALF;
     Z1 = (-B + std::sqrt(B * B - 4. * A * C))/(2. * A);
@@ -99,8 +104,8 @@ struct stress_tensor_t {
     D_yz =  0.0;
     D_zz = - (vpx_dx[ip] + vpy_dy[ip]);
 
-    invII = 0.5 * (D_xx * D_xx + D_yy * D_yy + D_zz * D_zz +
-                   D_xz * D_xz + D_yz * D_yz + D_xy * D_xy);
+    invII = 0.5 * (D_xx * D_xx + D_yy * D_yy + D_zz * D_zz) +
+                   D_zx * D_zx + D_zy * D_zy + D_xy * D_xy;
 
     sig_xx = invII != 0 ? (2000./std::sqrt(invII) + 2. * 50.) * D_xx : 0.0;
     sig_xy = invII != 0 ? (2000./std::sqrt(invII) + 2. * 50.) * D_xy : 0.0;
@@ -182,6 +187,9 @@ int main ()
 
   double phi = 0.0;
   double atm = 100000.;
+
+  //CAMBIARE QUI IN BASE AL TEST
+  //TODO RIVECERLO DAL JSON?
   double fric_ang = 37.0 * M_PI / 180.;
   double atan_grad_z;
   std::vector<double> norm_v (num_particles, 0.0);
@@ -237,12 +245,13 @@ int main ()
 
     my_timer.tic ("g2p");
     ptcls.g2p (vars, {"dZdx","dZdy"}, {"dZxp","dZyp"});
-    my_timer.toc ("g2p");
+    my_timer.toc ("g2p");  
 
     for (idx_t ip = 0; ip < num_particles; ++ip) {
       ptcls.dprops["hpZ"][ip] = ptcls.dprops["hp"][ip] + ptcls.dprops["Zp"][ip];
 
-      ptcls.dprops["H"][ip] = 10.0 - ptcls.dprops["Zp"][ip];
+      double diff = data.eq_level - ptcls.dprops["Zp"][ip];
+      ptcls.dprops["H"][ip] = (data.eq_level > 0 && diff > 0) ? diff : 0.0;
     }
 
     for (idx_t ip = 0; ip<num_particles; ++ip)  {
@@ -355,6 +364,8 @@ int main ()
         my_timer.toc ("step 0");
 
         // (1) PROJECTION FROM MP TO NODES (P2G)
+
+        my_timer.tic("cpu_block");
 
         my_timer.tic ("p2g");
         ptcls.p2g (vars, {"Mp","mom_px","mom_py"}, {"Mv","mom_vx","mom_vy"});
@@ -574,8 +585,8 @@ int main ()
           double h = ptcls.dprops["hp"][ip];
           double nv = std::sqrt(vx*vx + vy*vy);
           if (data.FRICTION_ON > 0 && nv > 1e-10 && data.xi > 0) {
-            ptcls.dprops["Fb_x"][ip] = data.FRICTION_ON * (data.rho * data.g * h * std::tan(fric_ang) + data.rho * data.g * vx * vx / data.xi) * vx / nv;
-            ptcls.dprops["Fb_y"][ip] = data.FRICTION_ON * (data.rho * data.g * h * std::tan(fric_ang) + data.rho * data.g * vy * vy / data.xi) * vy / nv;
+            ptcls.dprops["Fb_x"][ip] = -data.FRICTION_ON * (data.rho * data.g * h * std::tan(fric_ang) + data.rho * data.g * vx * vx / data.xi) * vx / nv;
+            ptcls.dprops["Fb_y"][ip] = -data.FRICTION_ON * (data.rho * data.g * h * std::tan(fric_ang) + data.rho * data.g * vy * vy / data.xi) * vy / nv;
           } else {
             ptcls.dprops["Fb_x"][ip] = 0.0;
             ptcls.dprops["Fb_y"][ip] = 0.0;
@@ -614,6 +625,7 @@ int main ()
         ptcls.p2g (vars,std::vector<std::string>{"hp"}, std::vector<std::string>{"HV"});
         my_timer.toc ("p2g");
 
+        my_timer.toc("cpu_block");
 
          my_timer.tic ("save vts");
          filename = "nc_grid_";

@@ -71,7 +71,7 @@ int main() {
   double t = 0.0;
   double dt;
   double cel; // max velocity
-  double fric_ang = 12. * M_PI / 180.; //34. * M_PI / 180.;
+  double fric_ang = 37. * M_PI / 180.; //34. * M_PI / 180.;
 
   // for each property we have a vector with the values associated to each node
   // of the grid
@@ -113,11 +113,14 @@ int main() {
 
   ptcls.g2p(vars, std::vector<std::string>{"Z"},
             std::vector<std::string>{"Zp"});
-  // TODO: why again?
-  // ptcls.dprops.at("dZxp").assign(ptcls.num_particles, 0.0);
-  // ptcls.dprops.at("dZyp").assign(ptcls.num_particles, 0.0);
   ptcls.g2p(vars, std::vector<std::string>{"dZdx", "dZdy"},
             std::vector<std::string>{"dZxp", "dZyp"});
+
+  double eq_level = data.eq_level;  // letto da DATA.json se disponibile
+  for (idx_t ip = 0; ip < num_particles; ++ip) {
+      double diff = eq_level - ptcls.dprops["Zp"][ip];
+      ptcls.dprops["H"][ip] = (eq_level > 0 && diff > 0) ? diff : 0.0;
+  }
 
 #pragma omp parallel for schedule(static)
   for (idx_t ip = 0; ip < num_particles; ++ip) {
@@ -137,7 +140,7 @@ int main() {
   ptcls.build_mass();
   grid.vtk_export("GRID_forZ.vts", vars);
 
-  dt = 1.0e-5;
+  dt = 1.0e-3;
 
   int np = ptcls.num_particles;
 
@@ -215,10 +218,14 @@ int main() {
   double* d_pv_avx = Plotvars["avx"].data();
   double* d_pv_avy = Plotvars["avy"].data();
 
+
   const double A_coeff = 3.0 / 2.0;
   const double C_coeff = 65.0 / 32.0;
-  const double mu = 10.0; //50.0;
-  const double tau_Y = 30.0; //2000.0;
+
+  //CAMBIARE QUI IN BASE AL TEST
+  //TODO AGGIUNGERLI DAL JSON CHE E' MEGLIO
+  const double mu = 50.0;
+  const double tau_Y = 2000.0;
   const double cc = data.BINGHAM_ON;
   const double fric_on = data.FRICTION_ON;
   const double xi_coeff = data.xi;
@@ -232,11 +239,6 @@ int main() {
   std::vector<int> cell_ptcls(np);
   std::vector<int> color_cell_indices(ncells);
   int color_cell_offsets[5] = {0};
-
-  double eq_level = data.eq_level;  // letto da DATA.json se disponibile
-  for (idx_t ip = 0; ip < num_particles; ++ip) {
-      ptcls.dprops["H"][ip] = eq_level > 0 ? eq_level - ptcls.dprops["Zp"][ip] : 0.0;
-  }
 
   // TIME LOOP
   while (t < data.T) {
@@ -273,6 +275,7 @@ int main() {
 
     my_timer.tic("reorder");
     ptcls.init_particle_mesh(); // ref -> src/particles.cpp
+    d_p2g = ptcls.ptcl_to_grd.data();
     my_timer.toc("reorder");
 
     // DIAGNOSTICA: verifica ptcl_to_grd valido
@@ -325,7 +328,6 @@ int main() {
       d_dZyp = ptcls.dprops["dZyp"].data();
       d_Zp = ptcls.dprops["Zp"].data();
       d_hpZ = ptcls.dprops["hpZ"].data();
-      d_p2g = ptcls.ptcl_to_grd.data();
       d_Fpx  = ptcls.dprops["Fpx"].data();
       d_Fpy  = ptcls.dprops["Fpy"].data();
       d_vpxL = ptcls.dprops["vpxL"].data();
@@ -656,7 +658,7 @@ for (int ip = 0; ip < np; ip++) {
 // STEP 4: nodal vel/acc
 #pragma omp target teams distribute parallel for
         for (int iv = 0; iv < nn; iv++) {
-          bool active = d_Mv[iv] > 1e-8;
+          bool active = d_Mv[iv] > 1e-2;
           d_avx[iv] = active ? d_Ftot_vx[iv] / d_Mv[iv] : 0.0;
           d_avy[iv] = active ? d_Ftot_vy[iv] / d_Mv[iv] : 0.0;
           d_vvx[iv] = active ? d_mom_vx[iv] / d_Mv[iv] : 0.0;
@@ -785,7 +787,11 @@ if (bc_flag){
           double alf = h > 1e-3 ? (6.0 * mu * nv) / ((h + 0.001) * tau_Y) : 0.0;
           double bv = -114.0 / 32.0 - alf;
           double sq = sqrt(bv * bv - 4.0 * A_coeff * C_coeff);
-          double zz = 0.0;
+
+          double z1 = (-bv + sq) / (2.0 * A_coeff);
+          double z2 = (-bv - sq) / (2.0 * A_coeff);
+          double zz = (fabs(z1 - 0.5) <= 0.5) ? z1 : z2;
+
           double sxx = d_vpx_dx[ip], sxy = 0.5 * (d_vpx_dy[ip] + d_vpy_dx[ip]),
                  syy = d_vpy_dy[ip];
           double Dxx = sxx, Dxy = sxy, Dyy = syy, Dzz = -(sxx + d_vpy_dy[ip]);
@@ -793,14 +799,15 @@ if (bc_flag){
               h > 1e-3 ? 0.5 * (3.0 / (2.0 + zz)) * (vx / (h + 0.001)) : 0.0;
           double Dzy =
               h > 1e-3 ? 0.5 * (3.0 / (2.0 + zz)) * (vy / (h + 0.001)) : 0.0;
-          double inv2 = 0.5 * (Dxx * Dxx + Dyy * Dyy + Dzz * Dzz + Dzx * Dzx +
-                               Dzy * Dzy + Dxy * Dxy);
+
+          double inv2 = 0.5 * (Dxx * Dxx + Dyy * Dyy + Dzz * Dzz) + Dzx * Dzx + Dzy * Dzy + Dxy * Dxy;
+
           double coeff = inv2 != 0.0 ? (tau_Y / sqrt(inv2) + 2.0 * mu) : 0.0;
           double h_corr = h > 1e-10 ? h - d_H[ip]*d_H[ip]/h : 0.0;
-          d_F11[ip] = cc * coeff * Dxx + 0.5 * rho * g_c * h_corr;
-          d_F22[ip] = cc * coeff * Dyy + 0.5 * rho * g_c * h_corr;
-          d_F12[ip] = cc * coeff * Dxy;
-          d_F21[ip] = cc * coeff * Dxy;
+          d_F11[ip] = -cc * coeff * Dxx + 0.5 * rho * g_c * h_corr;
+          d_F22[ip] = -cc * coeff * Dyy + 0.5 * rho * g_c * h_corr;
+          d_F12[ip] = -cc * coeff * Dxy;
+          d_F21[ip] = -cc * coeff * Dxy;
         }
 
 // hpZ: G2P for Z→Zp + hpZ = hp + Zp
