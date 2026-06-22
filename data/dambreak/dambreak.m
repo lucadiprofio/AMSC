@@ -92,10 +92,12 @@ mu = 50.;
 phi = 37.;
 tauy = 2000.;
 
+MERGE_SPLIT_ON = 1;
+
 BINGHAM = 0.0;
 FRICTION = 0.0;
 CFL = 0.2;
-BC_FLAG = 1.0;
+BC_FLAG = 1;
 eq_level = 0.0;
 momp  = zeros (nmp,2);
 
@@ -131,6 +133,8 @@ DATA = struct (
 		 "mu", mu, ...
 		 "phi", phi, ...
 		 "tauy", tauy, ...
+
+		 "MERGE_SPLIT_ON", MERGE_SPLIT_ON, ...
 
      "BINGHAM_ON", BINGHAM, ...
      "FRICTION_ON", FRICTION, ...
@@ -187,6 +191,8 @@ v2j(FID, "dZdy",       dZdy,       false);
 v2j(FID, "mu",         mu,         false);
 v2j(FID, "phi",        phi,        false);
 v2j(FID, "tauy",       tauy,       false);
+
+v2j(FID, "MERGE_SPLIT_ON", MERGE_SPLIT_ON, false);
 
 v2j(FID, "BINGHAM_ON", BINGHAM,    false);
 v2j(FID, "FRICTION_ON",FRICTION,   false);

@@ -73,7 +73,10 @@ momp  = zeros(nmp, 2);
 BINGHAM  = 1.0;
 FRICTION = 1.0;
 CFL      = 0.2;
-BC_FLAG  = 1.0;
+BC_FLAG  = 1;
+
+MERGE_SPLIT_ON = 1;
+
 eq_level = 0.0;   % non well-balanced
 
 % Rheological parameters (not specified in the paper
@@ -135,6 +138,8 @@ v2j(FID, "dZdy",        dZdy,       false);
 v2j(FID, "mu",        mu,       false);
 v2j(FID, "phi",       phi,      false);
 v2j(FID, "tauy",      tauy,      false);
+
+v2j(FID, "MERGE_SPLIT_ON", MERGE_SPLIT_ON, false);
 
 v2j(FID, "BINGHAM_ON",  BINGHAM,    false);
 v2j(FID, "CFL",         CFL,        false);
