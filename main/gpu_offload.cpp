@@ -229,6 +229,7 @@ int main() {
   const double fric_on = data.FRICTION_ON;
   const double xi_coeff = data.xi;
   const int bc_flag = data.BC_FLAG;
+  const int ms_on = data.MERGE_SPLIT_ON;
   const double tan_fa = std::tan(fric_ang);
 
   // Color index arrays (rebuilt each iteration)
@@ -293,7 +294,7 @@ int main() {
 
     // merge-split
     ms_config ms_cfg;
-    if (it % ms_cfg.call_interval == 0 && it > 0) {
+    if (ms_on && it % ms_cfg.call_interval == 0 && it > 0) {
       my_timer.tic("merge_split");
       adaptive_merge_split<idx_t>(ptcls, ms_cfg);
 

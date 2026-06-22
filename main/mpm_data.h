@@ -35,11 +35,13 @@ struct DATA
   double BINGHAM_ON;
   double FRICTION_ON;
   double CFL;
-  double BC_FLAG;
+  int BC_FLAG;
+
+  int MERGE_SPLIT_ON;
+
   double eq_level;
 
   DATA (const char* filename);
-
 };
 
 void
@@ -75,6 +77,9 @@ from_json (const nlohmann::json &j, DATA &d)
   j.at("FRICTION_ON").get_to(d.FRICTION_ON);
   j.at("CFL").get_to(d.CFL);
   j.at("BC_FLAG").get_to(d.BC_FLAG);
+
+  j.at("MERGE_SPLIT_ON").get_to(d.MERGE_SPLIT_ON);
+
   j.at("eq_level").get_to(d.eq_level);
 }
 
