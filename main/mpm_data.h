@@ -26,6 +26,12 @@ struct DATA
   std::vector<double> Z;
   std::vector<double> dZdx;
   std::vector<double> dZdy;
+
+  // rheology
+  double mu;
+  double phi;
+  double tauy;
+
   double BINGHAM_ON;
   double FRICTION_ON;
   double CFL;
@@ -39,7 +45,7 @@ struct DATA
 void
 from_json (const nlohmann::json &j, DATA &d)
 {
-   j.at("x").get_to(d.x);
+  j.at("x").get_to(d.x);
   j.at("y").get_to(d.y);
   j.at("Mp").get_to(d.Mp);
   j.at("Ap").get_to(d.Ap);
@@ -60,6 +66,11 @@ from_json (const nlohmann::json &j, DATA &d)
   j.at("Z").get_to(d.Z);
   j.at("dZdx").get_to(d.dZdx);
   j.at("dZdy").get_to(d.dZdy);
+
+  j.at("mu").get_to(d.mu);
+  j.at("phi").get_to(d.phi);
+  j.at("tauy").get_to(d.tauy);
+
   j.at("BINGHAM_ON").get_to(d.BINGHAM_ON);
   j.at("FRICTION_ON").get_to(d.FRICTION_ON);
   j.at("CFL").get_to(d.CFL);

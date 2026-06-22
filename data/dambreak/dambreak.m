@@ -87,6 +87,11 @@ Mp    = Msys/nmp * ones(nmp, 1);
 Vp    = Mp./rhosy;
 Ap    = Vp./hp;
 vp    = zeros (nmp,2);
+
+mu = 50.;
+phi = 37.;
+tauy = 2000.;
+
 BINGHAM = 0.0;
 FRICTION = 0.0;
 CFL = 0.2;
@@ -122,6 +127,11 @@ DATA = struct (
 	   "Z", Z, ...
 	   "dZdx", dZdx, ...
 	   "dZdy", dZdy, ...
+
+		 "mu", mu, ...
+		 "phi", phi, ...
+		 "tauy", tauy, ...
+
      "BINGHAM_ON", BINGHAM, ...
      "FRICTION_ON", FRICTION, ...
      "CFL", CFL, ...
@@ -173,6 +183,11 @@ v2j(FID, "Vp",         Vp,         false);
 v2j(FID, "Z",          Z,          false);
 v2j(FID, "dZdx",       dZdx,       false);
 v2j(FID, "dZdy",       dZdy,       false);
+
+v2j(FID, "mu",         mu,         false);
+v2j(FID, "phi",        phi,        false);
+v2j(FID, "tauy",       tauy,       false);
+
 v2j(FID, "BINGHAM_ON", BINGHAM,    false);
 v2j(FID, "FRICTION_ON",FRICTION,   false);
 v2j(FID, "CFL",        CFL,        false);

@@ -71,7 +71,7 @@ int main() {
   double t = 0.0;
   double dt;
   double cel; // max velocity
-  double fric_ang = 37. * M_PI / 180.; //34. * M_PI / 180.;
+  double fric_ang = data.phi * M_PI / 180.; // 37. * M_PI / 180.;
 
   // for each property we have a vector with the values associated to each node
   // of the grid
@@ -222,10 +222,9 @@ int main() {
   const double A_coeff = 3.0 / 2.0;
   const double C_coeff = 65.0 / 32.0;
 
-  //CAMBIARE QUI IN BASE AL TEST
-  //TODO AGGIUNGERLI DAL JSON CHE E' MEGLIO
-  const double mu = 50.0;
-  const double tau_Y = 2000.0;
+  double mu = data.mu;
+  double tau_Y = data.tauy;
+
   const double cc = data.BINGHAM_ON;
   const double fric_on = data.FRICTION_ON;
   const double xi_coeff = data.xi;
@@ -264,11 +263,11 @@ int main() {
       my_timer.tic("save csv");
       std::string filename = "nc_particles_" + std::to_string(it++) + ".csv";
       if (t >= 0.0) {
-        if(it%10==0){
+        // if(it%10==0) {
           std::ofstream OF(filename.c_str());
           ptcls.print<particles_t::output_format::csv>(OF);
           OF.close();
-        }
+        // }
       }
       my_timer.toc("save csv");
   
@@ -930,12 +929,12 @@ for (int color = 0; color < 4; color++) {
 
     std::cout << "done. step8b..." << std::flush;
     
-    if (it % 10 == 0) {
+    // if (it % 10 == 0) {
       my_timer.tic("save vts");
       filename = "nc_grid_" + std::to_string(it) + ".vts";
       grid.vtk_export(filename.c_str(), vars);
       my_timer.toc("save vts");
-    }
+    // }
 
     t += dt;
     std::cout << "  vts done." << std::endl;
