@@ -78,13 +78,9 @@ inline void print_conservation(const std::string &label,
 }
 
 /// @brief Mark cells that are genuinely exterior to the fluid.
-///
-/// Criteria: only empty cells reachable from the grid edge
-/// through a path of other empty cells are marked exterior.
-/// Internal holes (empty cells surrounded by fluid) are NOT marked,
-/// preventing false boundary detection.
 inline void mark_exterior_cells(const particles_t &ptcls,
-                                std::vector<char> &is_exterior) {
+                                std::vector<char> &is_exterior,
+                                std::vector<int> &is_physical) {
   using idx_t = particles_t::idx_t;
 
   const idx_t nrows = ptcls.grid.num_rows();
@@ -99,66 +95,19 @@ inline void mark_exterior_cells(const particles_t &ptcls,
     if (!ptcl_list.empty())
       has_particles[cell_idx] = 1;
 
-  // flood-fill bfs from grid boundary through empty cells
   is_exterior.assign(ncells, 0);
-  std::queue<int> q;
-
-  // Seed: empty cells on the grid boundary
-  for (idx_t c = 0; c < ncols; ++c) {
-    for (idx_t r : {0, nrows - 1}) {
-      int idx = flat_idx(r, c);
-      if (!has_particles[idx] && !is_exterior[idx]) {
+  for (idx_t idx = 0; idx < ncells; ++idx) {
+    if (!has_particles[idx]) {
+      // skip artificial boundary edges
+      idx_t r = idx % nrows;
+      idx_t c = idx / nrows;
+      // is_physical: the index follows the order top, right, bottom, left
+      bool on_artificial = (r == 0        && !is_physical[0]) ||
+                           (r == nrows - 1 && !is_physical[2])    ||
+                           (c == 0        && !is_physical[3])    ||
+                           (c == ncols - 1 && !is_physical[1]);
+      if (!on_artificial)
         is_exterior[idx] = 1;
-        q.push(idx);
-      }
-    }
-  }
-  for (idx_t r = 0; r < nrows; ++r) {
-    for (idx_t c : {0, ncols - 1}) {
-      int idx = flat_idx(r, c);
-      if (!has_particles[idx] && !is_exterior[idx]) {
-        is_exterior[idx] = 1;
-        q.push(idx);
-      }
-    }
-  }
-  // rewriting the previous loop
-  /*
-  for (idx_t c = 0; c < ncols; ++c) {
-    for (idx_t r = 0; r < nrows; ++r) {
-      if (r == 0 || r == nrows - 1 || c == 0 || c == ncols - 1) {
-        int idx = flat_idx(r, c);
-        if (!has_particles[idx] && !is_exterior[idx]) {
-          is_exterior[idx] = 1;
-          q.push(idx);
-        }
-      }
-    }
-  }
-  */
-
-  // propagate only through empty cells
-  const int dr[] = {-1, 1, 0, 0};
-  const int dc[] = {0, 0, -1, 1};
-
-  while (!q.empty()) {
-    int cidx = q.front();
-    q.pop();
-    idx_t r = cidx % nrows;
-    idx_t c = cidx / nrows;
-
-    // "around cell"
-    for (int k = 0; k < 4; ++k) {
-      int nr = static_cast<int>(r) + dr[k];
-      int nc = static_cast<int>(c) + dc[k];
-      if (nr < 0 || nr >= static_cast<int>(nrows) || nc < 0 ||
-          nc >= static_cast<int>(ncols))
-        continue;
-      int nidx = flat_idx(nr, nc);
-      if (!has_particles[nidx] && !is_exterior[nidx]) {
-        is_exterior[nidx] = 1;
-        q.push(nidx);
-      }
     }
   }
 }
@@ -707,10 +656,10 @@ inline void execute_merge_split(particles_t &ptcls,
 }
 
 template <typename idx_t>
-inline void adaptive_merge_split(particles_t &ptcls, const ms_config &cfg) {
+inline void adaptive_merge_split(particles_t &ptcls, const ms_config &cfg, std::vector<int> &is_physical) {
 
   std::vector<char> is_exterior;
-  mark_exterior_cells(ptcls, is_exterior);
+  mark_exterior_cells(ptcls, is_exterior, is_physical);
 
   // BFS distance to fluid boundary
   std::vector<double> cell_dist;
