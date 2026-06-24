@@ -15,18 +15,19 @@
 ///
 /// where r_i = sqrt(Ap_i) is the particle characteristic length.
 struct ms_config {
-  double alpha = 2.0; /// Split threshold
-  double beta = 3.0;  /// Merge threshold
-  // double h = 2.5;     /// Inter-particle spacing parameter
-  int max_ops = 50; /// Safety cap on total split+merge operations per call
-  int call_interval = 10; /// Execute merge/split every N time steps
-  int min_level = -2;     /// Don't split below this level (finer bound)
-  int max_level = 2;      /// Don't merge above this level (coarser bound)
-  int min_particles_per_cell = 4; /// Ensure at least this many particles per cell
-  // double stretch_thresh = 0.5; /// [NUOVO] Trigger cinematico (Divergenza massima tollerata)
+  double alpha = 2.0; /// split threshold
+  double beta = 3.0;  /// merge threshold
+  int min_level = -2;     /// do not split below this level (finer bound)
+  int max_level = 2;      /// do not merge above this level (coarser bound)
+  
+  int min_particles_per_cell = 4; /// ensure at least this many particles per cell (to avoid numerical issues)
 
-  double hp_min = 0.05;    /// Trigger to prevent numerical fractures
-  double max_dv = 0.01;    /// Velocity tolerance to conserve energy
+  // double stretch_thresh = 0.5; /// particle is stretching too much --> split
+  double hp_min = 0.05;    /// avoid merging particles that are too small (to avoid numerical issues)
+  double max_dv = 0.01;    /// merge particles with similar velocities
+
+    int max_ops = 50; /// safety cap on total split+merge operations per call
+  int call_interval = 10; /// execute merge/split every N time steps
 };
 
 enum action_t : int {
@@ -36,12 +37,14 @@ enum action_t : int {
   MERGE_SECONDARY = 3
 };
 
+
 static const std::set<std::string> extensive_props = {"Mp", "Vp", "Ap",
                                                       "mom_px", "mom_py"};
 
 inline bool is_extensive(const std::string &name) {
   return extensive_props.count(name) > 0;
 }
+
 
 struct conservation_check {
   double total_mass, total_momx, total_momy;
@@ -77,38 +80,37 @@ inline void print_conservation(const std::string &label,
             << "  momy=" << cc.total_momy << std::endl;
 }
 
+
+
 /// @brief Mark cells that are genuinely exterior to the fluid.
 inline void mark_exterior_cells(const particles_t &ptcls,
                                 std::vector<char> &is_exterior,
-                                std::vector<int> &is_physical) {
+                                const std::vector<int> &is_physical) {
   using idx_t = particles_t::idx_t;
 
   const idx_t nrows = ptcls.grid.num_rows();
   const idx_t ncols = ptcls.grid.num_cols();
   const int ncells = nrows * ncols;
 
-  auto flat_idx = [&](idx_t r, idx_t c) -> int { return r + nrows * c; };
-
-  // identify cells with particles
   std::vector<char> has_particles(ncells, 0);
   for (auto const &[cell_idx, ptcl_list] : ptcls.grd_to_ptcl)
     if (!ptcl_list.empty())
       has_particles[cell_idx] = 1;
 
   is_exterior.assign(ncells, 0);
-  for (idx_t idx = 0; idx < ncells; ++idx) {
-    if (!has_particles[idx]) {
-      // skip artificial boundary edges
-      idx_t r = idx % nrows;
-      idx_t c = idx / nrows;
-      // is_physical: the index follows the order top, right, bottom, left
-      bool on_artificial = (r == 0        && !is_physical[0]) ||
-                           (r == nrows - 1 && !is_physical[2])    ||
-                           (c == 0        && !is_physical[3])    ||
-                           (c == ncols - 1 && !is_physical[1]);
-      if (!on_artificial)
-        is_exterior[idx] = 1;
-    }
+  for (int idx = 0; idx < ncells; ++idx) {
+    if (has_particles[idx]) continue;
+
+    idx_t r = idx % nrows;
+    idx_t c = idx / nrows;
+
+    // is_physical: [top, right, bottom, left]
+    bool on_artificial = (r == nrows - 1 && !is_physical[0]) || // top    (r=nrows-1, y=Ly)
+                     (c == ncols - 1 && !is_physical[1]) || // right  (c=ncols-1, x=Lx)
+                     (r == 0         && !is_physical[2]) || // bottom (r=0,       y=0)
+                     (c == 0         && !is_physical[3]);   // left   (c=0,       x=0)
+
+    is_exterior[idx] = on_artificial ? 0 : 1;
   }
 }
 
@@ -132,7 +134,7 @@ inline void compute_boundary_distance(const particles_t &ptcls,
 
   auto flat_idx = [&](idx_t r, idx_t c) -> int { return r + nrows * c; };
 
-  // Identify cells with particles
+  // identify cells with particles
   std::vector<char> has_particles(ncells, 0);
   for (auto const &[cell_idx, ptcl_list] : ptcls.grd_to_ptcl)
     if (!ptcl_list.empty())

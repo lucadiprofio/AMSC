@@ -275,21 +275,6 @@ int main() {
     d_p2g = ptcls.ptcl_to_grd.data();
     my_timer.toc("reorder");
 
-    // DIAGNOSTICA: verifica ptcl_to_grd valido
-    {
-      int bad = 0;
-      for (int ip = 0; ip < np; ip++) {
-        if (d_p2g[ip] < 0 || d_p2g[ip] >= ncells) {
-          if (bad < 3)
-            std::cout << "  BAD p2g: ip=" << ip << " cell=" << d_p2g[ip]
-                      << " x=" << d_x[ip] << " y=" << d_y[ip] << std::endl;
-          bad++;
-        }
-      }
-      if (bad > 0)
-        std::cout << "  Total bad particles: " << bad << std::endl;
-    }
-
     // merge-split
     ms_config ms_cfg;
     if (data.MERGE_SPLIT_ON && (it % ms_cfg.call_interval == 0) && it > 0) {
