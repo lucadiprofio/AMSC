@@ -262,11 +262,11 @@ int main() {
     my_timer.tic("save csv");
     std::string filename = "nc_particles_" + std::to_string(it++) + ".csv";
     if (t >= 0.0) {
-      // if(it%10==0) {
+      if(it%5==0) {
       std::ofstream OF(filename.c_str());
       ptcls.print<particles_t::output_format::csv>(OF);
       OF.close();
-      // }
+      }
     }
     my_timer.toc("save csv");
 

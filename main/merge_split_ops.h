@@ -22,8 +22,8 @@ struct ms_config {
   int call_interval = 10; /// Execute merge/split every N time steps
   int min_level = -2;     /// Don't split below this level (finer bound)
   int max_level = 2;      /// Don't merge above this level (coarser bound)
-  int min_particles_per_cell = 2;
-  double stretch_thresh = 0.5; /// [NUOVO] Trigger cinematico (Divergenza massima tollerata)
+  int min_particles_per_cell = 4; /// Ensure at least this many particles per cell
+  // double stretch_thresh = 0.5; /// [NUOVO] Trigger cinematico (Divergenza massima tollerata)
 
   double hp_min = 0.05;    /// Trigger to prevent numerical fractures
   double max_dv = 0.01;    /// Velocity tolerance to conserve energy
@@ -330,7 +330,7 @@ inline void decide_actions(const particles_t &ptcls,
 
     const double divergence = vpx_dx_vec[ip] + vpy_dy_vec[ip];
 
-    if ((elfs_i < alpha * r_i ) || (divergence > cfg.stretch_thresh)) {
+    if ((elfs_i < alpha * r_i ) /* || (divergence > cfg.stretch_thresh) */ ) {
       if (level_vec[ip] > min_level) act[ip] = SPLIT;
     } else if (elfs_i > beta * r_i && hp_i > hp_min) {
       if (level_vec[ip] < max_level) act[ip] = MERGE_PRIMARY;
