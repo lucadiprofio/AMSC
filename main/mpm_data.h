@@ -38,7 +38,6 @@ struct DATA
   int BC_FLAG;
 
   int MERGE_SPLIT_ON;
-  std::vector<int> physical_boundary;
 
   double eq_level;
 
@@ -80,7 +79,6 @@ from_json (const nlohmann::json &j, DATA &d)
   j.at("BC_FLAG").get_to(d.BC_FLAG);
 
   j.at("MERGE_SPLIT_ON").get_to(d.MERGE_SPLIT_ON);
-  j.at("physical_boundary").get_to(d.physical_boundary);
 
   j.at("eq_level").get_to(d.eq_level);
 }

@@ -279,7 +279,7 @@ int main() {
     ms_config ms_cfg;
     if (data.MERGE_SPLIT_ON && (it % ms_cfg.call_interval == 0) && it > 0) {
       my_timer.tic("merge_split");
-      adaptive_merge_split<idx_t>(ptcls, ms_cfg, data.physical_boundary);
+      adaptive_merge_split<idx_t>(ptcls, ms_cfg);
 
       np = ptcls.num_particles;
 

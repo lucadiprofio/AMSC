@@ -76,7 +76,6 @@ CFL      = 0.2;
 BC_FLAG  = 1;
 
 MERGE_SPLIT_ON = 1;
-physical_boundary = [1, 0, 0, 0]  % top, right, bottom, left
 
 eq_level = 0.0;   % non well-balanced
 
@@ -141,7 +140,6 @@ v2j(FID, "phi",       phi,      false);
 v2j(FID, "tauy",      tauy,      false);
 
 v2j(FID, "MERGE_SPLIT_ON", MERGE_SPLIT_ON, false);
-v2j(FID, "physical_boundary", physical_boundary, false);
 
 v2j(FID, "BINGHAM_ON",  BINGHAM,    false);
 v2j(FID, "CFL",         CFL,        false);

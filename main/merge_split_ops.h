@@ -84,34 +84,17 @@ inline void print_conservation(const std::string &label,
 
 /// @brief Mark cells that are genuinely exterior to the fluid.
 inline void mark_exterior_cells(const particles_t &ptcls,
-                                std::vector<char> &is_exterior,
-                                const std::vector<int> &is_physical) {
+                                std::vector<char> &is_exterior) {
   using idx_t = particles_t::idx_t;
 
   const idx_t nrows = ptcls.grid.num_rows();
   const idx_t ncols = ptcls.grid.num_cols();
   const int ncells = nrows * ncols;
 
-  std::vector<char> has_particles(ncells, 0);
+  is_exterior.assign(ncells, 1);
   for (auto const &[cell_idx, ptcl_list] : ptcls.grd_to_ptcl)
     if (!ptcl_list.empty())
-      has_particles[cell_idx] = 1;
-
-  is_exterior.assign(ncells, 0);
-  for (int idx = 0; idx < ncells; ++idx) {
-    if (has_particles[idx]) continue;
-
-    idx_t r = idx % nrows;
-    idx_t c = idx / nrows;
-
-    // is_physical: [top, right, bottom, left]
-    bool on_artificial = (r == nrows - 1 && !is_physical[0]) || // top    (r=nrows-1, y=Ly)
-                     (c == ncols - 1 && !is_physical[1]) || // right  (c=ncols-1, x=Lx)
-                     (r == 0         && !is_physical[2]) || // bottom (r=0,       y=0)
-                     (c == 0         && !is_physical[3]);   // left   (c=0,       x=0)
-
-    is_exterior[idx] = on_artificial ? 0 : 1;
-  }
+      is_exterior[cell_idx] = 0; // wet cell
 }
 
 /// @brief Compute per-cell distance to the fluid boundary.
@@ -134,12 +117,6 @@ inline void compute_boundary_distance(const particles_t &ptcls,
 
   auto flat_idx = [&](idx_t r, idx_t c) -> int { return r + nrows * c; };
 
-  // identify cells with particles
-  std::vector<char> has_particles(ncells, 0);
-  for (auto const &[cell_idx, ptcl_list] : ptcls.grd_to_ptcl)
-    if (!ptcl_list.empty())
-      has_particles[cell_idx] = 1;
-
   // (cell_index, distance_in_cells)
   std::queue<std::pair<int, int>> bfs;
 
@@ -147,7 +124,7 @@ inline void compute_boundary_distance(const particles_t &ptcls,
   for (idx_t c = 0; c < ncols; ++c) {
     for (idx_t r = 0; r < nrows; ++r) {
       int idx = flat_idx(r, c);
-      if (!has_particles[idx])
+      if (is_exterior[idx])
         continue; // only seed from wet cells
 
       // checks whether the wet cell is surrounded by any exterior cell
@@ -188,7 +165,7 @@ inline void compute_boundary_distance(const particles_t &ptcls,
         continue;
 
       int nidx = flat_idx(nr, nc);
-      if (!has_particles[nidx])
+      if (is_exterior[nidx])
         continue; // don't propagate into empty cells
 
       double new_dist = (d + 1) * h;
@@ -658,10 +635,10 @@ inline void execute_merge_split(particles_t &ptcls,
 }
 
 template <typename idx_t>
-inline void adaptive_merge_split(particles_t &ptcls, const ms_config &cfg, std::vector<int> &is_physical) {
+inline void adaptive_merge_split(particles_t &ptcls, const ms_config &cfg) {
 
   std::vector<char> is_exterior;
-  mark_exterior_cells(ptcls, is_exterior, is_physical);
+  mark_exterior_cells(ptcls, is_exterior);
 
   // BFS distance to fluid boundary
   std::vector<double> cell_dist;
