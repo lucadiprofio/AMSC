@@ -74,8 +74,6 @@ scatter3(xp(:),yp(:),hp(:))
 %% Constants
 g     = 9.81;
 xi    = 200;
-vis   = 50;
-ty    = 2000;
 T     = 8;
 
 %% Material point quantities initialization
@@ -92,7 +90,6 @@ phi = 37.;
 tauy = 2000.;
 
 MERGE_SPLIT_ON = 1;
-physical_boundary = [1, 0, 0, 0]  % top, right, bottom, left
 
 BINGHAM = 0.0;
 FRICTION = 0.0;
@@ -122,8 +119,6 @@ DATA = struct (
 	   "g", g, ...
 	   "T", T, ...
 	   "xi", xi, ...
-	   "vis", vis, ...
-	   "ty", ty, ...
 	   "rho", rhosy, ...
 	   "Vp", Vp, ...
 	   "Z", Z, ...
@@ -135,7 +130,6 @@ DATA = struct (
 		 "tauy", tauy, ...
 
 		 "MERGE_SPLIT_ON", MERGE_SPLIT_ON, ...
-		 "physical_boundary", physical_boundary, ...
 
      "BINGHAM_ON", BINGHAM, ...
      "FRICTION_ON", FRICTION, ...
@@ -194,12 +188,11 @@ v2j(FID, "phi",        phi,        false);
 v2j(FID, "tauy",       tauy,       false);
 
 v2j(FID, "MERGE_SPLIT_ON", MERGE_SPLIT_ON, false);
-v2j(FID, "physical_boundary", physical_boundary, false);
 
 v2j(FID, "BINGHAM_ON", BINGHAM,    false);
 v2j(FID, "FRICTION_ON",FRICTION,   false);
 v2j(FID, "CFL",        CFL,        false);
-v2j(FID, "eq_level",eq_level,           false); 
+v2j(FID, "eq_level",eq_level,      false); 
 v2j(FID, "BC_FLAG",    BC_FLAG,    true);
 fprintf(FID, "}\n");
 fclose(FID);

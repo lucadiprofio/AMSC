@@ -43,6 +43,12 @@ xi    = 200;
 rhosy = 1000.0;
 T     = 1.0;
 
+mu = 50.;
+phi = 37.;
+tauy = 2000.;
+
+MERGE_SPLIT_ON = 1;
+
 % Quantita delle particelle
 
 Msys  = sum(hp * DX * DY * rhosy);
@@ -101,6 +107,10 @@ v2j(FID, "Vp",          Vp,        false);
 v2j(FID, "Z",           Zz,        false);
 v2j(FID, "dZdx",        dZdx,      false);
 v2j(FID, "dZdy",        dZdy,      false);
+v2j(FID, "mu",         mu,         false);
+v2j(FID, "phi",        phi,        false);
+v2j(FID, "tauy",       tauy,       false);
+v2j(FID, "MERGE_SPLIT_ON", MERGE_SPLIT_ON, false);
 v2j(FID, "BINGHAM_ON",  0,         false);
 v2j(FID, "FRICTION_ON", 0,         false);
 v2j(FID, "CFL",         0.1,       false);

@@ -81,9 +81,9 @@ eq_level = 0.0;   % non well-balanced
 
 % Rheological parameters (not specified in the paper
 % we choose them to be consistent with the well-balanced test):
-mu = 10; % Pa·s (viscosity)
-phi = 12; % degrees (friction angle)
-tauy = 30; % Pa·s (as in well-balanced test)
+mu = 10.; % Pa·s (viscosity)
+phi = 12.; % degrees (friction angle)
+tauy = 30.; % Pa·s (as in well-balanced test)
 
 Zz   = Z(:);
 dZdx = gx(:);

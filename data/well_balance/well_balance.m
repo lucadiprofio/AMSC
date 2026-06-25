@@ -99,8 +99,6 @@ ylabel('y');
 %% Constants
 g     = 9.81;
 xi    = 200.;
-vis   = 0;
-ty    = 0;
 T     = 1.;
 
 %% Material point quantities initialization
@@ -121,12 +119,13 @@ mu = 2000.; % Pa
 phi = 20.; % degrees
 tauy = 30.; % Pa * s
 
+MERGE_SPLIT_ON = 0;
+
 BINGHAM = 0.0;
 FRICTION = 0.0;
 CFL = 0.1;
 BC_FLAG = 0.0;
 
-MERGE_SPLIT_ON = 0;
 
 eq_level = 10.0;
 
