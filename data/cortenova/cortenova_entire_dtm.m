@@ -1,4 +1,3 @@
-
 clear all;
 close all;
 clc;
@@ -217,8 +216,9 @@ colormap('hsv');
 %% Constants
 g     = 9.81;
 xi    = 200;
-vis   = 50;
-ty    = 2000;
+mu   = 2000;
+tauy    = 50;
+phi = 34.;
 T     = 20;
 
 %% Material point quantities initialization
@@ -234,6 +234,8 @@ momp  = zeros (nmp,2);
 
 Fb(:,1) = zeros (nmp,1);
 Fb(:,2) = zeros (nmp,1);
+
+MERGE_SPLIT_ON = 1;
 
 BINGHAM = 1.0;
 FRICTION = 1.0;
@@ -257,13 +259,15 @@ DATA = struct( "x", xp, ...
 	   "g", g, ...
 	   "T", T, ...
 	   "xi", xi, ...
-	   "vis", vis, ...
-	   "ty", ty, ...
+	   "mu", mu, ...
+	   "phi", phi, ...
+	   "tauy", tauy, ...
 	   "rho", rhosy, ...
 	   "Vp", Vp, ...
 	   "Z", Z, ...
 	   "dZdx", dZdx,...
 	   "dZdy", dZdy,...
+     "MERGE_SPLIT_ON", MERGE_SPLIT_ON,...
             "BINGHAM_ON", BINGHAM,...
      "FRICTION_ON", FRICTION, ...
      "CFL", CFL,...
@@ -309,26 +313,22 @@ v2j(FID, "mom_py",      momp(:,2),  false);
 v2j(FID, "g",           g,          false);
 v2j(FID, "T",           T,          false);
 v2j(FID, "xi",          xi,         false);
-v2j(FID, "vis",         vis,        false);
-v2j(FID, "ty",          ty,         false);
+v2j(FID, "mu",          mu,         false);
+v2j(FID, "phi",         phi,        false);
+v2j(FID, "tauy",        tauy,       false);
 v2j(FID, "rho",         rhosy,      false);
 v2j(FID, "Vp",          Vp,         false);
 v2j(FID, "Z",           Z,          false);
 v2j(FID, "dZdx",        dZdx,       false);
 v2j(FID, "dZdy",        dZdy,       false);
+v2j(FID, "MERGE_SPLIT_ON", MERGE_SPLIT_ON, false);
 v2j(FID, "BINGHAM_ON",  BINGHAM,    false);
 v2j(FID, "FRICTION_ON", FRICTION,   false);
 v2j(FID, "CFL",         CFL,        false);
-v2j(FID, "BC_FLAG",     BC_FLAG,    true);
+v2j(FID, "BC_FLAG",     BC_FLAG,    false);
+
+v2j(FID, "eq_level", 0.0, true);
+
 fprintf(FID, "}\n");
 fclose(FID);
 disp("DATA.json scritto correttamente");
-
-
-
-
-
-
-
-
-
