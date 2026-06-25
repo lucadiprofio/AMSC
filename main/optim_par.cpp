@@ -77,8 +77,8 @@ struct stress_tensor_t {
 
     //CAMBIARE QUI IN BASE AL TEST mu=50 e tau=2000
     //TODO AGGIUNGERE PARAMETRI DAL JSON COSI VALE PER TUTTO
-    double mu= 50.0;
-    double tau_Y=2000.0;
+    double mu= data.mu;
+    double tau_Y=data.tauy;
 
     ALF = hp[ip] > 1.e-3
       ? (6. * mu * nrm)/((hp[ip]+0.001) * tau_Y)
@@ -107,16 +107,16 @@ struct stress_tensor_t {
     invII = 0.5 * (D_xx * D_xx + D_yy * D_yy + D_zz * D_zz) +
                    D_zx * D_zx + D_zy * D_zy + D_xy * D_xy;
 
-    sig_xx = invII != 0 ? (2000./std::sqrt(invII) + 2. * 50.) * D_xx : 0.0;
-    sig_xy = invII != 0 ? (2000./std::sqrt(invII) + 2. * 50.) * D_xy : 0.0;
-    sig_yy = invII != 0 ? (2000./std::sqrt(invII) + 2. * 50.) * D_yy : 0.0;
+    sig_xx = invII != 0 ? (tau_Y/std::sqrt(invII) + 2. * mu) * D_xx : 0.0;
+    sig_xy = invII != 0 ? (tau_Y/std::sqrt(invII) + 2. * mu) * D_xy : 0.0;
+    sig_yy = invII != 0 ? (tau_Y/std::sqrt(invII) + 2. * mu) * D_yy : 0.0;
 
-    double H_term = (H[ip] * H[ip]) / (hp[ip] + 1e-6);
+    double h_corr = hp[ip] > 1e-10 ? hp[ip] - (H[ip]*H[ip]) / hp[ip] : 0.0;
 
-    F_11[ip] =  BING * sig_xx - .5 * data.rho * data.g *  (hp[ip] - H_term);
+    F_11[ip] =  BING * sig_xx - .5 * data.rho * data.g * h_corr;
     F_12[ip] =  BING * sig_xy;
     F_21[ip] =  BING * sig_xy;
-    F_22[ip] =  BING * sig_yy - .5 * data.rho * data.g *  (hp[ip] - H_term);
+    F_22[ip] =  BING * sig_yy - .5 * data.rho * data.g * h_corr;
 
   }
 
@@ -182,15 +182,16 @@ int main ()
   std::iota(ptcls.iprops["label"].begin(),ptcls.iprops["label"].end(),0);
 
   double t = 0.0;
-  double dt  ;
+  double dt;
   double cel;
 
-  double phi = 0.0;
+  bool WRITE_OUTPUT = true;
+  double phi = data.phi;
   double atm = 100000.;
 
   //CAMBIARE QUI IN BASE AL TEST
   //TODO RIVECERLO DAL JSON?
-  double fric_ang = 37.0 * M_PI / 180.;
+  double fric_ang = phi * M_PI / 180.;
   double atan_grad_z;
   std::vector<double> norm_v (num_particles, 0.0);
   std::vector<double> div_vp (num_particles, 0.0);
@@ -256,11 +257,11 @@ int main ()
 
     for (idx_t ip = 0; ip<num_particles; ++ip)  {
 
-      double H_term = (ptcls.dprops["H"][ip] * ptcls.dprops["H"][ip]) / (ptcls.dprops["hp"][ip] + 1e-6);
-      ptcls.dprops["F_11"][ip] =   .5 * data.rho * data.g *   (ptcls.dprops["hp"][ip]   - H_term) ;
-      ptcls.dprops["F_12"][ip] = 0.0;
-      ptcls.dprops["F_21"][ip] = 0.0;
-      ptcls.dprops["F_22"][ip] =  .5 * data.rho * data.g *   (ptcls.dprops["hp"][ip] - H_term);
+        double h_corr = ptcls.dprops["hp"][ip] > 1e-10 ? ptcls.dprops["hp"][ip] - (ptcls.dprops["H"][ip]*ptcls.dprops["H"][ip]) / ptcls.dprops["hp"][ip] : 0.0;
+        ptcls.dprops["F_11"][ip] = - .5 * data.rho * data.g * h_corr;
+        ptcls.dprops["F_12"][ip] = 0.0;
+        ptcls.dprops["F_21"][ip] = 0.0;
+        ptcls.dprops["F_22"][ip] = - .5 * data.rho * data.g * h_corr;
     }
 
     int it = 0;
@@ -294,35 +295,39 @@ int main ()
         cel = std::abs(max_vel);
 
         if (it > 0)
-        dt = data.CFL * data.hx / (1e-2 + cel);
+        dt = data.CFL * std::min(data.hx, data.hy) / (1e-2 + cel); // to avoid cell-crossing
         std::cout << "time = " << t << "  " << " dt = " <<  dt << std::endl;
         std::cout << "cel = " << cel << std::endl;
         my_timer.toc ("update dt");
 
+        it++;
+        if(WRITE_OUTPUT==true){
         my_timer.tic ("save csv");
         std::string filename = "nc_particles_";
-        filename = filename + std::to_string (it++);
+        filename = filename + std::to_string (it);
         filename = filename + ".csv";
-#ifdef USE_COMPRESSION
-	filename = filename + ".gz";
-#endif
-        if (it % 10 == 0)
-          {
-#ifdef USE_COMPRESSION
-	    boost::iostreams::filtering_ostream OF;
-	    OF.push (boost::iostreams::gzip_compressor());
-	    OF.push (boost::iostreams::file_sink (filename));
-#else
-            std::ofstream OF (filename.c_str ());
-#endif
-            ptcls.print<particles_t::output_format::csv>(OF);
-#ifdef USE_COMPRESSION
-	    boost::iostreams::close (OF);
-#else
-            OF.close ();
-#endif
-          }
-        my_timer.toc ("save csv");
+        #ifdef USE_COMPRESSION
+          filename = filename + ".gz";
+        #endif
+                if (it % 10 == 0)
+                  {
+        #ifdef USE_COMPRESSION
+              boost::iostreams::filtering_ostream OF;
+              OF.push (boost::iostreams::gzip_compressor());
+              OF.push (boost::iostreams::file_sink (filename));
+        #else
+                    std::ofstream OF (filename.c_str ());
+        #endif
+                    ptcls.print<particles_t::output_format::csv>(OF);
+        #ifdef USE_COMPRESSION
+              boost::iostreams::close (OF);
+        #else
+                    OF.close ();
+        #endif
+                  }
+                my_timer.toc ("save csv");
+
+        }
 
         //  (0)  CONNECTIVITY and BASIS FUNCTIONS
         my_timer.tic ("reorder");
@@ -434,7 +439,7 @@ int main ()
         for_each(policy, ptcls.iprops["label"].begin(), ptcls.iprops["label"].end(), [=, &Vp, &dZxp, &dZyp, &Fpx, &Fpy, &hp, &H, &data](int ip) {
             
             // Fattore di bilanciamento. Se H = 0 (frana normale), il moltiplicatore è 1.0.
-            double wb_factor = 1.0 - (H[ip] / (hp[ip] + 1e-6));
+            double wb_factor = hp[ip] > 1e-10 ? 1.0 - (H[ip] / hp[ip]) : 1.0;
             
             Fpx[ip] = -data.g * Vp[ip] * data.rho * dZxp[ip] * wb_factor;
             Fpy[ip] = -data.g * Vp[ip] * data.rho * dZyp[ip] * wb_factor;
@@ -570,7 +575,7 @@ int main ()
         transform (policy, ptcls.dprops["hp"].begin (), ptcls.dprops["hp"].end (), div_vp.begin (), ptcls.dprops["hp"].begin (), [=] (double x, double y) { return x / (1 + dt * y); } );
         transform (policy, ptcls.dprops["vpx"].begin (), ptcls.dprops["vpx"].end (), ptcls.dprops["Mp"].begin (), ptcls.dprops["mom_px"].begin (), std::multiplies<double> () );
         transform (policy, ptcls.dprops["vpy"].begin (), ptcls.dprops["vpy"].end (), ptcls.dprops["Mp"].begin (), ptcls.dprops["mom_py"].begin (), std::multiplies<double> () );
-        transform (policy, ptcls.dprops["Vp"].begin (), ptcls.dprops["Vp"].end (), div_vp.begin (), ptcls.dprops["Vp"].begin (), [=] (double x, double y) { return x / (1 + dt * y); } );
+        //transform (policy, ptcls.dprops["Vp"].begin (), ptcls.dprops["Vp"].end (), div_vp.begin (), ptcls.dprops["Vp"].begin (), [=] (double x, double y) { return x / (1 + dt * y); } );
        // transform (policy, ptcls.dprops["hp"].begin (), ptcls.dprops["hp"].end (), ptcls.dprops["Mp"].begin (),ptcls.dprops["Ap"].begin (), [=] (double x, double y) { return y / (1e-4 + data.rho * x); } );
       // transform (policy, ptcls.dprops["hp"].begin (), ptcls.dprops["hp"].end (), ptcls.dprops["Ap"].begin (),ptcls.dprops["Mp"].begin (), [] (double x, double y) { return x * y * 1291.0 ; } );
         transform (policy, ptcls.dprops["Vp"].begin (), ptcls.dprops["Vp"].end (), ptcls.dprops["hp"].begin (), ptcls.dprops["Ap"].begin (), std::divides<double> () );
@@ -585,20 +590,14 @@ int main ()
           double h = ptcls.dprops["hp"][ip];
           double nv = std::sqrt(vx*vx + vy*vy);
           if (data.FRICTION_ON > 0 && nv > 1e-10 && data.xi > 0) {
-            ptcls.dprops["Fb_x"][ip] = -data.FRICTION_ON * (data.rho * data.g * h * std::tan(fric_ang) + data.rho * data.g * vx * vx / data.xi) * vx / nv;
-            ptcls.dprops["Fb_y"][ip] = -data.FRICTION_ON * (data.rho * data.g * h * std::tan(fric_ang) + data.rho * data.g * vy * vy / data.xi) * vy / nv;
+            double v2 = vx*vx + vy*vy;
+            ptcls.dprops["Fb_x"][ip] = -data.FRICTION_ON * (data.rho * data.g * h * std::tan(fric_ang) + data.rho * data.g * v2 / data.xi) * vx / nv;
+            ptcls.dprops["Fb_y"][ip] = -data.FRICTION_ON * (data.rho * data.g * h * std::tan(fric_ang) + data.rho * data.g * v2 / data.xi) * vy / nv;
           } else {
             ptcls.dprops["Fb_x"][ip] = 0.0;
             ptcls.dprops["Fb_y"][ip] = 0.0;
           }
         }
-        /*transform (policy, ptcls.dprops["vpx"].begin (), ptcls.dprops["vpx"].end (), ptcls.dprops["vpy"].begin (), norm_v.begin (), [] (double x, double y) { return std::sqrt (x*x + y*y); });
-        transform (policy, ptcls.dprops["vpx"].begin (), ptcls.dprops["vpx"].end (), ptcls.dprops["hp"].begin (),  ptcls.dprops["Fb_x"].begin (),
-                   [&] (double x, double y) { return  data.FRICTION_ON *  ( data.rho * data.g * y * std::tan(fric_ang) + data.rho * data.g * x * x  / data.xi) * x; });
-        transform (policy, ptcls.dprops["Fb_x"].begin (), ptcls.dprops["Fb_x"].end (), norm_v.begin (), ptcls.dprops["Fb_x"].begin (), std::divides<double> ());
-        transform (policy, ptcls.dprops["vpy"].begin (), ptcls.dprops["vpy"].end (), ptcls.dprops["hp"].begin (),  ptcls.dprops["Fb_y"].begin (),
-                   [&] (double x, double y) { return   data.FRICTION_ON *  ( data.rho * data.g * y * std::tan(fric_ang) + data.rho * data.g * x * x  / data.xi) * x; }); //data.rho * data.g * ( y * std::tan(fric_ang) + x * x  / data.xi) * x
-        transform (policy, ptcls.dprops["Fb_y"].begin (), ptcls.dprops["Fb_y"].end (), norm_v.begin (), ptcls.dprops["Fb_y"].begin (), std::divides<double> ());*/
         my_timer.toc ("step 7b");
 
 
@@ -627,19 +626,18 @@ int main ()
 
         my_timer.toc("cpu_block");
 
+        if(WRITE_OUTPUT==true){
          my_timer.tic ("save vts");
-         filename = "nc_grid_";
+         std::string filename = "nc_grid_";
          filename = filename + std::to_string (it);
          filename = filename + ".vts";
         if (it % 10 == 0) {
           grid.vtk_export(filename.c_str(), Plotvars);
           grid.vtk_export(filename.c_str(), vars);
          }
-        t +=dt;
          my_timer.toc ("save vts");
-
-        //my_timer.print_report ();
-    //    if (it % 3000 == 0) break;
+        }
+        t +=dt;
 
       }
 

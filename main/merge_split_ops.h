@@ -23,7 +23,7 @@ struct ms_config {
   int min_level = -2;     /// Don't split below this level (finer bound)
   int max_level = 2;      /// Don't merge above this level (coarser bound)
   int min_particles_per_cell = 2;
-  double stretch_thresh = 0.5; /// [NUOVO] Trigger cinematico (Divergenza massima tollerata)
+  double stretch_thresh = 10000000; /// [NUOVO] Trigger cinematico (Divergenza massima tollerata)
 
   double hp_min = 0.05;    /// Trigger to prevent numerical fractures
   double max_dv = 0.01;    /// Velocity tolerance to conserve energy
@@ -200,7 +200,7 @@ inline void compute_boundary_distance(const particles_t &ptcls,
         continue; // only seed from wet cells
 
       // checks whether the wet cell is surrounded by any exterior cell
-      bool on_fluid_boundary = false;
+      /*bool on_fluid_boundary = false;
       if (r > 0 && is_exterior[flat_idx(r - 1, c)])
         on_fluid_boundary = true;
       if (r < nrows - 1 && is_exterior[flat_idx(r + 1, c)])
@@ -209,6 +209,16 @@ inline void compute_boundary_distance(const particles_t &ptcls,
         on_fluid_boundary = true;
       if (c < ncols - 1 && is_exterior[flat_idx(r, c + 1)])
         on_fluid_boundary = true;
+      if (r == 0 || r == nrows - 1 || c == 0 || c == ncols - 1) 
+        on_fluid_boundary = true;*/
+
+      bool is_domain_edge = (r == 0 || r == nrows - 1 || c == 0 || c == ncols - 1);
+
+      bool on_fluid_boundary = false;
+      if (!is_domain_edge) {
+          if (c > 0         && is_exterior[flat_idx(r, c - 1)]) on_fluid_boundary = true;
+          if (c < ncols - 1 && is_exterior[flat_idx(r, c + 1)]) on_fluid_boundary = true;
+      }
 
       if (on_fluid_boundary) {
         cell_dist[idx] = 0.0;
@@ -297,7 +307,8 @@ inline void compute_elfs(const particles_t &ptcls,
     idx_t c0 = cell / nrows;
 
     constexpr int radius = 2;
-    for (int dr = -radius; dr <= radius; ++dr) {
+    //for (int dr = -radius; dr <= radius; ++dr) {
+    int dr=0;
       for (int dc = -radius; dc <= radius; ++dc) {
         int r = static_cast<int>(r0) + dr;
         int c = static_cast<int>(c0) + dc;
@@ -325,7 +336,7 @@ inline void compute_elfs(const particles_t &ptcls,
         // same siutation as std::clamp case
         if (d < min_dist) min_dist = d;
       }
-    }
+    //}
     elfs[ip] = min_dist;
   }
 }

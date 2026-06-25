@@ -41,7 +41,7 @@ fprintf('Nodi griglia: %d\n', (nelex+1)*(neley+1));
 g     = 9.81;
 xi    = 200;
 rhosy = 1000.0;
-T     = 1.0;
+T     = 5.0;
 
 % Quantita delle particelle
 
@@ -50,6 +50,19 @@ Mp    = Msys / nmp * ones(nmp, 1);
 Vp    = Mp ./ rhosy;
 Ap    = Vp ./ hp;
 vp    = zeros(nmp, 2);
+
+mu = 50.;
+phi = 0.;
+tauy = 2000.;
+
+MERGE_SPLIT_ON = 1;
+
+BINGHAM = 1.0;
+FRICTION = 1.0;
+CFL = 0.2;
+BC_FLAG = 1;
+eq_level = 0.0;
+
 momp  = zeros(nmp, 2);
 
 Zz = Z(:);
@@ -101,10 +114,15 @@ v2j(FID, "Vp",          Vp,        false);
 v2j(FID, "Z",           Zz,        false);
 v2j(FID, "dZdx",        dZdx,      false);
 v2j(FID, "dZdy",        dZdy,      false);
-v2j(FID, "BINGHAM_ON",  0,         false);
-v2j(FID, "FRICTION_ON", 0,         false);
-v2j(FID, "CFL",         0.1,       false);
-v2j(FID, "BC_FLAG",     1,         true);
+v2j(FID, "mu",         mu,         false);
+v2j(FID, "phi",        phi,        false);
+v2j(FID, "tauy",       tauy,       false);
+v2j(FID, "MERGE_SPLIT_ON", MERGE_SPLIT_ON, false);
+v2j(FID, "BINGHAM_ON",  BINGHAM,         false);
+v2j(FID, "FRICTION_ON", FRICTION,         false);
+v2j(FID, "eq_level",eq_level,           false); 
+v2j(FID, "CFL",         CFL,       false);
+v2j(FID, "BC_FLAG",     BC_FLAG,         true);
 fprintf(FID, "}\n");
 fclose(FID);
 

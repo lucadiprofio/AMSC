@@ -103,15 +103,13 @@ vis   = 0;
 ty    = 0;
 T     = 1.;
 
-%% Material point quantities initialization
 nmp   = numel(xp);
 rhosy = 1200.0;
-Msys  = sum (hp*(hl(1)/nl).^2*rhosy);
-Mp    = Msys/nmp * ones(nmp, 1);
-Vp    = Mp./rhosy;
-Ap    = Vp./hp;
-vp    = zeros (nmp,2);
+Ap    = DX*DY * ones(nmp, 1);   % footprint = spaziatura particelle
+Vp    = Ap .* hp;               % volume colonna = area × profondità
+Mp    = rhosy * Vp;             % massa = ρ × volume  → Mp ∝ hp
 
+vp = zeros(nmp, 2);
 momp  = zeros (nmp,2);
 
 Fb(:,1) = zeros (nmp,1);

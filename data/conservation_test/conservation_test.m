@@ -59,7 +59,7 @@ xlabel('x [m]'); ylabel('y [m]'); zlabel('h + Z [m]');
 g     = 9.81;
 xi    = 200;      % turbulence coefficient [m/s^2]
 rhosy = 1200.0;   % mudflow density [kg/m^3]
-T     = 7;        % final time [s]
+T     = 10;        % final time [s]
 
 %% Initial conditions for particles
 Msys  = sum(hp * DX * DY * rhosy);
