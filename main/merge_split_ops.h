@@ -22,11 +22,14 @@ struct ms_config {
   
   int min_particles_per_cell = 4; /// ensure at least this many particles per cell (to avoid numerical issues)
 
-  // double stretch_thresh = 0.5; /// particle is stretching too much --> split
   double hp_min = 0.05;    /// avoid merging particles that are too small (to avoid numerical issues)
   double max_dv = 0.01;    /// merge particles with similar velocities
 
-    int max_ops = 50; /// safety cap on total split+merge operations per call
+  double grad_weight = 0.1; // weight for velocity gradient trigger
+                            // 0 = purely geometric (original behavior)
+                            // increase to split more aggressively in high-shear zones
+
+  int max_ops = 50; /// safety cap on total split+merge operations per call
   int call_interval = 10; /// execute merge/split every N time steps
 };
 
@@ -299,20 +302,32 @@ inline void decide_actions(const particles_t &ptcls,
   const double* hp_vec = ptcls.dprops.at("hp").data();
   const double* vpx_dx_vec = ptcls.dprops.at("vpx_dx").data();
   const double* vpy_dy_vec = ptcls.dprops.at("vpy_dy").data();
+  const double* vpx_dy_vec = ptcls.dprops.at("vpx_dy").data();
+  const double* vpy_dx_vec = ptcls.dprops.at("vpy_dx").data();
   #pragma omp target teams distribute parallel for \
-    map(to: Ap_vec[0:N_p], elfs[0:N_p], level_vec[0:N_p], px[0:N_p], py[0:N_p], hp_vec[0:N_p], vpx_dx_vec[0:N_p], vpy_dy_vec[0:N_p]) \
+    map(to: Ap_vec[0:N_p], elfs[0:N_p], level_vec[0:N_p], px[0:N_p], py[0:N_p], hp_vec[0:N_p], vpx_dx_vec[0:N_p], vpy_dy_vec[0:N_p], vpx_dy_vec[0:N_p], vpy_dx_vec[0:N_p]) \
     map(tofrom: act[0:N_p])
   for (idx_t ip = 0; ip < N_p; ++ip) {
     const double r_i = std::sqrt(Ap_vec[ip]);
     const double elfs_i = elfs[ip];
     const double hp_i = hp_vec[ip];
 
-    const double divergence = vpx_dx_vec[ip] + vpy_dy_vec[ip];
+    // velocity gradient magnitude as additional split trigger
+    // following Lastiwka et al. (2005): refine where velocity gradient is high
+    const double grad_v = std::sqrt(
+        vpx_dx_vec[ip]*vpx_dx_vec[ip] +
+        vpy_dy_vec[ip]*vpy_dy_vec[ip] +
+        0.5*(vpx_dy_vec[ip] + vpy_dx_vec[ip])*(vpx_dy_vec[ip] + vpy_dx_vec[ip])
+    );
 
-    if ((elfs_i < alpha * r_i ) /* || (divergence > cfg.stretch_thresh) */ ) {
-      if (level_vec[ip] > min_level) act[ip] = SPLIT;
-    } else if (elfs_i > beta * r_i && hp_i > hp_min) {
-      if (level_vec[ip] < max_level) act[ip] = MERGE_PRIMARY;
+    // combined criterion: geometric (ELFS) + physical (velocity gradient)
+    // following Adams et al. (2007) Sec. 4.3: elfs + d_phys < alpha * r_i
+    const double d_phys = cfg.grad_weight * grad_v;
+
+    if ((elfs_i + d_phys) < alpha * r_i) {
+        if (level_vec[ip] > min_level) act[ip] = SPLIT;
+    } else if ((elfs_i + d_phys) > beta * r_i && hp_i > hp_min) {
+        if (level_vec[ip] < max_level) act[ip] = MERGE_PRIMARY;
     }
     // else: KEEP
   }
