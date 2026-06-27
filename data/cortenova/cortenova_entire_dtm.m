@@ -32,7 +32,7 @@ rowstart = 1;
 rowend   = 676;
 
 colstart =1;
-colend   =756;
+colend   = 756;
 
 ndivrows = rowend - rowstart;
 ndivcols = colend - colstart;
@@ -217,20 +217,20 @@ colormap('hsv');
 %% Constants
 g     = 9.81;
 xi    = 200;
-vis   = 50;
-ty    = 2000;
+vis   = 2000;
+ty    = 50;
 T     = 20;
 
 %% Material point quantities initialization
 nmp   = numel(xp);
 rhosy = 1291.0;
 Msys  = sum (hp*DX*DY*rhosy);
-Mp    = Msys/nmp * ones(nmp, 1);
-Vp    = Mp./rhosy;
-Ap    = Vp./hp;
-vp    = zeros (nmp,2);
-
+Ap = DX*DY*ones(nmp,1);  Vp = Ap.*hp;  Mp = rhosy*Vp;
+mu = 2000.; phi = 34.; tauy = 50.; 
+eq_level = 0.0;
+MERGE_SPLIT_ON = 1;
 momp  = zeros (nmp,2);
+vp    = zeros (nmp,2);
 
 Fb(:,1) = zeros (nmp,1);
 Fb(:,2) = zeros (nmp,1);
@@ -238,7 +238,7 @@ Fb(:,2) = zeros (nmp,1);
 BINGHAM = 1.0;
 FRICTION = 1.0;
 CFL = 0.1;
-BC_FLAG = 0.0;
+BC_FLAG = 1.0;
 
 %%
 DATA = struct( "x", xp, ...
@@ -264,11 +264,18 @@ DATA = struct( "x", xp, ...
 	   "Z", Z, ...
 	   "dZdx", dZdx,...
 	   "dZdy", dZdy,...
-            "BINGHAM_ON", BINGHAM,...
-     "FRICTION_ON", FRICTION, ...
-     "CFL", CFL,...
-     "BC_FLAG",BC_FLAG);
+            "mu", mu, ...
+		 "phi", phi, ...
+		 "tauy", tauy, ...
 
+		 "MERGE_SPLIT_ON", MERGE_SPLIT_ON, ...
+
+     "BINGHAM_ON", BINGHAM, ...
+     "FRICTION_ON", FRICTION, ...
+     "CFL", CFL, ...
+     "BC_FLAG",BC_FLAG, ...
+	 "eq_level", eq_level
+ );
 % --- Scrittura manuale del DATA.json ---
 function v2j (fid, name, x, last)
   if isscalar(x) && ~ischar(x)
@@ -316,6 +323,11 @@ v2j(FID, "Vp",          Vp,         false);
 v2j(FID, "Z",           Z,          false);
 v2j(FID, "dZdx",        dZdx,       false);
 v2j(FID, "dZdy",        dZdy,       false);
+v2j(FID, "mu",         mu,         false);
+v2j(FID, "phi",        phi,        false);
+v2j(FID, "tauy",       tauy,       false);
+v2j(FID, "eq_level",eq_level,           false); 
+v2j(FID, "MERGE_SPLIT_ON", MERGE_SPLIT_ON, false);
 v2j(FID, "BINGHAM_ON",  BINGHAM,    false);
 v2j(FID, "FRICTION_ON", FRICTION,   false);
 v2j(FID, "CFL",         CFL,        false);

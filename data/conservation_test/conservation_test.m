@@ -11,6 +11,8 @@ Lx = 150;
 Ly = 20;
 hx = Lx / nelex;
 hy = Ly / neley;
+DT_FIXED = 0;   
+NSTEPS   = 100;
 
 x = linspace(0, Lx, nelex+1);
 y = linspace(0, Ly, neley+1);
@@ -138,13 +140,14 @@ v2j(FID, "dZdy",        dZdy,       false);
 v2j(FID, "mu",        mu,       false);
 v2j(FID, "phi",       phi,      false);
 v2j(FID, "tauy",      tauy,      false);
-
 v2j(FID, "MERGE_SPLIT_ON", MERGE_SPLIT_ON, false);
 
 v2j(FID, "BINGHAM_ON",  BINGHAM,    false);
 v2j(FID, "CFL",         CFL,        false);
 v2j(FID, "BC_FLAG",     BC_FLAG,    false);
 v2j(FID, "eq_level",    eq_level,   false);
+v2j(FID, "DT_FIXED",  DT_FIXED,    false);
+v2j(FID, "NSTEPS", NSTEPS,   false);
 v2j(FID, "FRICTION_ON", FRICTION,   true);
 fprintf(FID, "}\n");
 fclose(FID);

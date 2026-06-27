@@ -41,6 +41,9 @@ struct DATA
 
   double eq_level;
 
+  double DT_FIXED;   // dal JSON: >0 = dt fisso (scaling), 0 = adattivo
+  int    NSTEPS;     // dal JSON: passi in modalità dt fisso
+
   DATA (const char* filename);
 };
 
@@ -81,6 +84,9 @@ from_json (const nlohmann::json &j, DATA &d)
   j.at("MERGE_SPLIT_ON").get_to(d.MERGE_SPLIT_ON);
 
   j.at("eq_level").get_to(d.eq_level);
+
+  j.at("DT_FIXED").get_to(d.DT_FIXED);
+  j.at("NSTEPS").get_to(d.NSTEPS);
 }
 
 DATA::DATA (const char* filename) {

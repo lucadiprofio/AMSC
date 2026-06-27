@@ -15,6 +15,7 @@
 #include <quadgrid_cpp.h>
 #include <timer.h>
 #include "mpm_data.h"
+#include <chrono>
 
 #ifdef USE_DPL
 using dpl::transform;
@@ -185,7 +186,7 @@ int main ()
   double dt;
   double cel;
 
-  bool WRITE_OUTPUT = true;
+  bool WRITE_OUTPUT = false;
   double phi = data.phi;
   double atm = 100000.;
 
@@ -275,12 +276,19 @@ int main ()
     std::ofstream err_file("conservation_errors.csv");
     err_file << "time,err_mass,err_mom\n";
 
-    while (t < data.T) //data.T
-      {
+    const int WARMUP = 5;
+  std::chrono::high_resolution_clock::time_point t_start;
+  bool fixed = (data.DT_FIXED > 0.0);
 
-        my_timer.tic ("update dt");
+  while (fixed ? (it < data.NSTEPS) : (t < data.T)) {
+    if (it == WARMUP) t_start = std::chrono::high_resolution_clock::now();
 
-        double max_vel_x = *std::max_element(ptcls.dprops["vpx"].begin(), ptcls.dprops["vpx"].end());
+       double dt;
+    if (fixed) {
+      dt = data.DT_FIXED;
+    } else {
+      my_timer.tic ("update dt");
+      double max_vel_x = *std::max_element(ptcls.dprops["vpx"].begin(), ptcls.dprops["vpx"].end());
         double min_vel_x = *std::min_element(ptcls.dprops["vpx"].begin(), ptcls.dprops["vpx"].end());
 
         max_vel_x = std::max (std::abs(max_vel_x), std::abs(min_vel_x));
@@ -299,8 +307,9 @@ int main ()
         std::cout << "time = " << t << "  " << " dt = " <<  dt << std::endl;
         std::cout << "cel = " << cel << std::endl;
         my_timer.toc ("update dt");
+    }
+    it++;
 
-        it++;
         if(WRITE_OUTPUT==true){
         my_timer.tic ("save csv");
         std::string filename = "nc_particles_";
@@ -381,6 +390,7 @@ int main ()
         my_timer.toc ("g2pd");
 
 
+        if(WRITE_OUTPUT){
         // ==========================================
         // TEST CONSERVAZIONE MASSA E MOMENTO (L-inf)
         // ==========================================
@@ -425,7 +435,7 @@ int main ()
                       << " | Err Momento: " << err_mom << std::endl;
         }
         // ==========================================
-
+      }     
         // (2)  EXTERNAL FORCES ON VERTICES (P2G)
         my_timer.tic ("step 2a");
         auto& Vp = ptcls.dprops.at("Vp");
@@ -640,6 +650,14 @@ int main ()
         t +=dt;
 
       }
+
+      auto t_end = std::chrono::high_resolution_clock::now();
+  double sec = std::chrono::duration<double>(t_end - t_start).count();
+  int counted = it - WARMUP;
+  std::cout << "PERF np=" << ptcls.num_particles
+            << " counted_steps=" << counted
+            << " tot_s=" << sec
+            << " per_step_ms=" << 1e3*sec/counted << std::endl;
 
     my_timer.print_report ();
     //  ptcls.print<particles_t::output_format::csv>(std::cout);
