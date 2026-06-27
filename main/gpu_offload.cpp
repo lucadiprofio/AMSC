@@ -322,6 +322,7 @@ int main() {
           if (fixed) {
             dt = data.DT_FIXED;
           } else {
+             
             #pragma omp target update from(d_vpx[0:np], d_vpy[0:np], d_hp[0:np])
             my_timer.tic("update dt");
             double max_vel_x = *std::max_element(ptcls.dprops["vpx"].begin(), ptcls.dprops["vpx"].end());
@@ -343,14 +344,10 @@ int main() {
               std::cout << "time = " << t << "  " << " dt = " <<  dt << std::endl;
               std::cout << "cel = " << cel << std::endl;
               my_timer.toc ("update dt");
+
           }
 
           it++;
-
-          my_timer.tic("reorder");
-          ptcls.init_particle_mesh(); // ref -> src/particles.cpp
-          d_p2g = ptcls.ptcl_to_grd.data();
-          my_timer.toc("reorder");
 
           // merge-split
           /*ms_config ms_cfg;
@@ -415,11 +412,11 @@ int main() {
 
           }*/
 
+          std::cout << "  Entering gpu_block..." << std::flush;
+          my_timer.tic("gpu_block");
+          {
 
-          // step 0 — reset nodal arrays on host
-          my_timer.tic("step 0");
-
-          // (1) azzera gli accumulatori nodali SUL DEVICE  (sostituisce "step 0" host)
+            // (1) azzera gli accumulatori nodali SUL DEVICE  (sostituisce "step 0" host)
           #pragma omp target teams distribute parallel for
           for (int iv = 0; iv < nn; iv++) {
             d_Mv[iv]=0; d_mom_vx[iv]=0; d_mom_vy[iv]=0;
@@ -430,11 +427,6 @@ int main() {
             d_pv_rho[iv]=0; d_pv_vvx[iv]=0; d_pv_vvy[iv]=0; d_pv_avx[iv]=0; d_pv_avy[iv]=0;
           }
           // NB: NON azzerare d_Z, d_dZdx, d_dZdy (topografia, mappata una volta).
-          my_timer.toc("step 0");
-
-          std::cout << "  Entering gpu_block..." << std::flush;
-          my_timer.tic("gpu_block");
-          {
 
 
             int* d_cstart = cell_start.data();
@@ -674,13 +666,13 @@ int main() {
                     n_vcap++;
                 }
                 // Clamp positions to grid bounds
-                /*double eps = 1e-10;
+                double eps = 1e-10;
                 double Lx = ncols * hx;
                 double Ly = nrows * hy;
                 if (d_x[ip] < eps) d_x[ip] = eps;
                 if (d_x[ip] > Lx - eps) d_x[ip] = Lx - eps;
                 if (d_y[ip] < eps) d_y[ip] = eps;
-                if (d_y[ip] > Ly - eps) d_y[ip] = Ly - eps;*/
+                if (d_y[ip] > Ly - eps) d_y[ip] = Ly - eps;
 
               }
 
@@ -877,22 +869,22 @@ int main() {
               }
           }
       }
+      
 
       } // end target data
 
       my_timer.toc("gpu_block");
 
       // (3) posizioni sull'host -> ricostruisci connettività -> rimandale indietro
-    #pragma omp target update from(d_x[0:np], d_y[0:np])
-    {  // clamp posizioni (host) — il tuo blocco INVARIATO
-      double eps=1e-10, Lx=ncols*hx, Ly=nrows*hy;
-      for (int ip=0; ip<np; ip++){
-        if(d_x[ip]<eps)d_x[ip]=eps; if(d_x[ip]>Lx-eps)d_x[ip]=Lx-eps;
-        if(d_y[ip]<eps)d_y[ip]=eps; if(d_y[ip]>Ly-eps)d_y[ip]=Ly-eps;
-      }
-    }
+    my_timer.tic("transfer_xy");
+      #pragma omp target update from(d_x[0:np], d_y[0:np])
+     my_timer.toc("transfer_xy");  
+
+     my_timer.tic("reorder");
     ptcls.init_particle_mesh();
     d_p2g = ptcls.ptcl_to_grd.data();
+
+    my_timer.toc("reorder");
       {  
       my_timer.tic("build_colors");
           {
@@ -937,10 +929,14 @@ int main() {
     d_cstart = cell_start.data();
     d_cptcls = cell_ptcls.data();
     d_ccidx  = color_cell_indices.data();
+
+    my_timer.tic("transfer_xy");
     #pragma omp target update to(d_x[0:np], d_y[0:np])
+    my_timer.toc("transfer_xy");
 
     if (WRITE_OUTPUT) {
-
+      
+       my_timer.tic("diagnostics");
       #pragma omp target update from(d_vpx[0:np], d_vpy[0:np], d_hp[0:np], \
                                 d_hpZ[0:np], d_Zp[0:np], \
                                 d_apx[0:np], d_apy[0:np])
@@ -971,6 +967,7 @@ int main() {
               << " max_hp=" << *std::max_element(d_hp, d_hp+np)
               << " min_hp=" << *std::min_element(d_hp, d_hp+np) << std::endl;
     std::cout << "  Plotvars P2G..." << std::flush;*/
+     my_timer.toc("diagnostics");
   }
 
     t += dt;
