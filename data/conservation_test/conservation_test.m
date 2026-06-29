@@ -24,12 +24,6 @@ Z = 60 - (1/3).*X + 15.*exp(-((X-50).^2)./7 - ((Y-10).^2)./7);
 % Gradient
 [gx, gy] = gradient(Z, hx, hy);
 
-
-figure(1);
-surf(X, Y, Z);
-title('Topography Z(x,y)');
-xlabel('x [m]'); ylabel('y [m]'); zlabel('Z [m]');
-
 % Particles: only in region [0, 20] x [0, 20]
 Xmin = 0; Xmax = 20; Ymin = 0; Ymax = 20;
 DX = 0.45; DY = 0.45;
@@ -49,13 +43,6 @@ yp(hzero) = [];
 nmp = numel(xp);
 fprintf('Particles: %d\n', nmp);
 
-
-figure(2);
-surf(X, Y, Z);
-hold on;
-scatter3(xp, yp, hp + interp2(X, Y, Z, xp, yp, 'linear'), 7, 'b', 'filled');
-title('Initial condition: h_p + Z');
-xlabel('x [m]'); ylabel('y [m]'); zlabel('h + Z [m]');
 
 %% Physical parameters (from paper Section 4.2)
 g     = 9.81;

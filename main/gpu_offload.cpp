@@ -21,7 +21,7 @@ cdf::timer::timer_t my_timer{};
 
 int main() {
   DATA data("DATA.json");
-  bool WRITE_OUTPUT = false;
+  bool WRITE_OUTPUT = true;
 
   std::ofstream err_file("conservation_errors_gpu.csv");
     err_file << "time,err_mass,err_mom\n";
@@ -608,7 +608,6 @@ int main() {
                   for (int iv = 0; iv < nn; iv++) {
                     int r = iv % (nrows + 1);
                     int c = iv / (nrows + 1);
-                    // TODO: why not to use the method defined in quadgrid_cpp_imp.h??
                     if (c == 0 || c == 1 || c == ncols - 1 || c == ncols) {
                       d_mom_vx[iv] = 0.0;
                       d_vvx[iv] = 0.0;
@@ -656,15 +655,7 @@ int main() {
                 
                 d_vpxL[ip] = vxL;
                 d_vpyL[ip] = vyL;
-
-                double vmag = sqrt(vxL*vxL + vyL*vyL);
-                if (vmag > max_vmag) max_vmag = vmag;
-                double vcap = 50.0;                 // m/s (una colata reale sta sotto ~20 m/s)
-                if (vmag > vcap) {
-                    d_vpx[ip] = vxL * vcap / vmag;
-                    d_vpy[ip] = vyL * vcap / vmag;
-                    n_vcap++;
-                }
+                
                 // Clamp positions to grid bounds
                 double eps = 1e-10;
                 double Lx = ncols * hx;

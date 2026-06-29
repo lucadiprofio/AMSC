@@ -76,8 +76,6 @@ struct stress_tensor_t {
 
     nrm = std::sqrt(vpx[ip] * vpx[ip] +vpy[ip] * vpy[ip] );
 
-    //CAMBIARE QUI IN BASE AL TEST mu=50 e tau=2000
-    //TODO AGGIUNGERE PARAMETRI DAL JSON COSI VALE PER TUTTO
     double mu= data.mu;
     double tau_Y=data.tauy;
 
@@ -186,7 +184,7 @@ int main ()
   double dt;
   double cel;
 
-  bool WRITE_OUTPUT = false;
+  bool WRITE_OUTPUT = true;
   double phi = data.phi;
   double atm = 100000.;
 
@@ -501,7 +499,7 @@ int main ()
 
         // (5) BOUNDARY CONDITIONS - TO DO
         my_timer.tic ("step 5");
-        /* We assume the slide will never reach the boundary and do nothing here! */
+        // We assume the slide will never reach the boundary and do nothing here! 
         if (data.BC_FLAG)
         {
           for (auto icell = grid.begin_cell_sweep ();
@@ -580,15 +578,33 @@ int main ()
         ptcls.g2pd (vars, {"vvxL","vvyL"}, {"vpx_dx","vpy_dx"}, {"vpx_dy","vpy_dy"});
         my_timer.toc ("g2pd");
 
+
+        /*my_timer.tic ("step 7");
+        transform (policy, ptcls.dprops["vpx_dx"].begin (), ptcls.dprops["vpx_dx"].end (), ptcls.dprops["vpy_dy"].begin (), div_vp.begin (), std::plus<double> ());
+        transform (policy, ptcls.dprops["hp"].begin (), ptcls.dprops["hp"].end (), div_vp.begin (), ptcls.dprops["hp"].begin (), [dt] (double x, double y) { return x / (1 + dt * y); } );
+        transform (policy, ptcls.dprops["vpx"].begin (), ptcls.dprops["vpx"].end (), ptcls.dprops["Mp"].begin (), ptcls.dprops["mom_px"].begin (), std::multiplies<double> () );
+        transform (policy, ptcls.dprops["vpy"].begin (), ptcls.dprops["vpy"].end (), ptcls.dprops["Mp"].begin (), ptcls.dprops["mom_py"].begin (), std::multiplies<double> () );
+        transform (policy, ptcls.dprops["Vp"].begin (), ptcls.dprops["Vp"].end (), div_vp.begin (), ptcls.dprops["Vp"].begin (), [dt] (double x, double y) { return x / (1 + dt * y); } );
+       // transform (policy, ptcls.dprops["hp"].begin (), ptcls.dprops["hp"].end (), ptcls.dprops["Mp"].begin (),ptcls.dprops["Ap"].begin (), [=] (double x, double y) { return y / (1e-4 + data.rho * x); } );
+      // transform (policy, ptcls.dprops["hp"].begin (), ptcls.dprops["hp"].end (), ptcls.dprops["Ap"].begin (),ptcls.dprops["Mp"].begin (), [] (double x, double y) { return x * y * 1291.0 ; } );
+        transform (policy, ptcls.dprops["Vp"].begin (), ptcls.dprops["Vp"].end (), ptcls.dprops["hp"].begin (), ptcls.dprops["Ap"].begin (), [] (double x, double y) { return y > 1.e-4 ? x/y : 0.0; } );//std::divides<double>()
+
+        my_timer.toc ("step 7");*/
+        
         my_timer.tic ("step 7");
         transform (policy, ptcls.dprops["vpx_dx"].begin (), ptcls.dprops["vpx_dx"].end (), ptcls.dprops["vpy_dy"].begin (), div_vp.begin (), std::plus<double> ());
         transform (policy, ptcls.dprops["hp"].begin (), ptcls.dprops["hp"].end (), div_vp.begin (), ptcls.dprops["hp"].begin (), [=] (double x, double y) { return x / (1 + dt * y); } );
+        transform (policy, ptcls.dprops["hp"].begin (), ptcls.dprops["hp"].end (),
+           ptcls.dprops["hp"].begin (),
+           [] (double h) { return h < 1e-2 ? 1e-2 : h; });
         transform (policy, ptcls.dprops["vpx"].begin (), ptcls.dprops["vpx"].end (), ptcls.dprops["Mp"].begin (), ptcls.dprops["mom_px"].begin (), std::multiplies<double> () );
         transform (policy, ptcls.dprops["vpy"].begin (), ptcls.dprops["vpy"].end (), ptcls.dprops["Mp"].begin (), ptcls.dprops["mom_py"].begin (), std::multiplies<double> () );
         //transform (policy, ptcls.dprops["Vp"].begin (), ptcls.dprops["Vp"].end (), div_vp.begin (), ptcls.dprops["Vp"].begin (), [=] (double x, double y) { return x / (1 + dt * y); } );
        // transform (policy, ptcls.dprops["hp"].begin (), ptcls.dprops["hp"].end (), ptcls.dprops["Mp"].begin (),ptcls.dprops["Ap"].begin (), [=] (double x, double y) { return y / (1e-4 + data.rho * x); } );
       // transform (policy, ptcls.dprops["hp"].begin (), ptcls.dprops["hp"].end (), ptcls.dprops["Ap"].begin (),ptcls.dprops["Mp"].begin (), [] (double x, double y) { return x * y * 1291.0 ; } );
-        transform (policy, ptcls.dprops["Vp"].begin (), ptcls.dprops["Vp"].end (), ptcls.dprops["hp"].begin (), ptcls.dprops["Ap"].begin (), std::divides<double> () );
+        transform (policy, ptcls.dprops["Vp"].begin (), ptcls.dprops["Vp"].end (),
+           ptcls.dprops["hp"].begin (), ptcls.dprops["Ap"].begin (),
+           [] (double x, double y) { return y > 1.e-2 ? x/y : 0.0; } );
 
         my_timer.toc ("step 7");
 
