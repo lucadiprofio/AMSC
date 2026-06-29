@@ -159,59 +159,6 @@ Zz(Zz<=0) = -1.0;
 Z    = Zz(:);
 dZdx = gx(:);
 dZdy = gy(:);
-%{
-figure(1)
-surf(X(Ymin:Ymax,Xmin:Xmax),Y(Ymin:Ymax,Xmin:Xmax),dem(Ymin:Ymax,Xmin:Xmax));
-hold on
-scatter3(xp,yp,hp,10,'r')
-colormap('hsv');
-%}
-
-figure(1)
-surf(X,Y,zplot);
-hold on
-scatter3(xp,yp,hp,10,'r')
-colormap('hsv');
-
-
-%figure(2)
-%surf(X(100:600,240:700),Y(100:600,240:700),dem(100:600,240:700));
-%colormap('hsv');
-
-figure(3)
-scatter3(xp,yp,hp,10,'r')
-view([0 90])
-
-
-%{
-figure(3);
-
-mesh(X,Y,Zz)
-hold on
-mesh(X,Y,h)
-xlabel('x');
-ylabel('y');
-view([70 30])
-%}
-
-
-at = atan(sqrt(gx.^2 + gy.^2));
-%{
-figure(3)
-mesh(X,Y,at)
-xlabel('x');
-ylabel('y');
-colormap('hsv');
-
-
-figure(4)
-surf(X(100:600,240:700),Y(100:600,240:700),at(100:600,240:700));
-xlabel('x');
-ylabel('y');
-colormap('hsv');
-%}
-%figure(5)
-%scatter3(xp(:),yp(:),hp(:))
 
 
 %% Constants
@@ -225,7 +172,9 @@ T     = 20;
 nmp   = numel(xp);
 rhosy = 1291.0;
 Msys  = sum (hp*DX*DY*rhosy);
-Ap = DX*DY*ones(nmp,1);  Vp = Ap.*hp;  Mp = rhosy*Vp;
+Ap = DX*DY*ones(nmp,1); 
+Vp = Ap.*hp;  
+Mp = rhosy*Vp;
 mu = 2000.; phi = 34.; tauy = 50.; 
 eq_level = 0.0;
 MERGE_SPLIT_ON = 1;
@@ -237,8 +186,11 @@ Fb(:,2) = zeros (nmp,1);
 
 BINGHAM = 1.0;
 FRICTION = 1.0;
-CFL = 0.1;
+CFL = 0.01;
 BC_FLAG = 1.0;
+
+DT_FIXED = 0;   
+NSTEPS   = 100;
 
 %%
 DATA = struct( "x", xp, ...
@@ -267,7 +219,8 @@ DATA = struct( "x", xp, ...
             "mu", mu, ...
 		 "phi", phi, ...
 		 "tauy", tauy, ...
-
+      "DT_FIXED", DT_FIXED, ...
+    "NSTEPS", NSTEPS, ...
 		 "MERGE_SPLIT_ON", MERGE_SPLIT_ON, ...
 
      "BINGHAM_ON", BINGHAM, ...
@@ -328,6 +281,8 @@ v2j(FID, "phi",        phi,        false);
 v2j(FID, "tauy",       tauy,       false);
 v2j(FID, "eq_level",eq_level,           false); 
 v2j(FID, "MERGE_SPLIT_ON", MERGE_SPLIT_ON, false);
+v2j(FID, "DT_FIXED",  DT_FIXED,    false);
+v2j(FID, "NSTEPS", NSTEPS,   false);
 v2j(FID, "BINGHAM_ON",  BINGHAM,    false);
 v2j(FID, "FRICTION_ON", FRICTION,   false);
 v2j(FID, "CFL",         CFL,        false);
