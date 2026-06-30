@@ -3,30 +3,28 @@ build/
 *.o
 *.obj
 
-# Output di simulazione
+# Output
 *.vts
 *.csv
 *.vtk
 *.vtu
 *.gz
 
-# File di stato/log
 *.log
 *.pvsm
 run_*.log
 
-# DATA.json generati da Octave
+# json files
 data/*/DATA.json
 
-# File temporanei OS
+# OS files
 .DS_Store
 Thumbs.db
 *.swp
 *~
 
-# Editor
+# editor
 .vscode/
-.idea/
 
 # Octave history
 .octave_hist
