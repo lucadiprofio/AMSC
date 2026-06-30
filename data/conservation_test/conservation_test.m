@@ -135,7 +135,10 @@ v2j(FID, "BC_FLAG",     BC_FLAG,    false);
 v2j(FID, "eq_level",    eq_level,   false);
 v2j(FID, "DT_FIXED",  DT_FIXED,    false);
 v2j(FID, "NSTEPS", NSTEPS,   false);
-v2j(FID, "FRICTION_ON", FRICTION,   true);
+v2j(FID, "FRICTION_ON", FRICTION,   false);
+v2j(FID, "ms_alpha", 1.5, false);
+v2j(FID, "ms_beta",  0.3, true);
+
 fprintf(FID, "}\n");
 fclose(FID);
 fprintf('DATA.json written: %d particles, grid %dx%d\n', nmp, nelex, neley);

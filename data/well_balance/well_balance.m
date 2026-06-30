@@ -126,7 +126,7 @@ FRICTION = 0.0;
 CFL = 0.1;
 BC_FLAG = 0.0;
 
-MERGE_SPLIT_ON = 0;
+MERGE_SPLIT_ON = 1;
 
 eq_level = 10.0;
 
@@ -224,6 +224,9 @@ v2j(FID, "FRICTION_ON", FRICTION,   false);
 v2j(FID, "DT_FIXED",  DT_FIXED,    false);
 v2j(FID, "NSTEPS", NSTEPS,   false);
 v2j(FID, "MERGE_SPLIT_ON", MERGE_SPLIT_ON, false);
+
+v2j(FID,"ms_alpha",1.3,false);
+v2j(FID,"ms_beta",0.3,false);
 
 v2j(FID, "eq_level", eq_level, true);
 fprintf(FID, "}\n");

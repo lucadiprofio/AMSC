@@ -44,6 +44,19 @@ struct DATA
   double DT_FIXED;   // dal JSON: >0 = dt fisso (scaling), 0 = adattivo
   int    NSTEPS;     // dal JSON: passi in modalità dt fisso
 
+    // merge/split (opzionali: default = valori di ms_config) -> si tarano dal .m
+  double ms_alpha;
+  double ms_beta;
+  double ms_split_hp_min;
+  double ms_shear_split;
+  double ms_hp_min;
+  double ms_max_dv;
+  int    ms_min_level;
+  int    ms_max_level;
+  int    ms_min_particles_per_cell;
+  int    ms_call_interval;
+  double ms_max_ops; // double per evitare overflow int da JSON, poi cast
+
   DATA (const char* filename);
 };
 
@@ -87,6 +100,20 @@ from_json (const nlohmann::json &j, DATA &d)
 
   j.at("DT_FIXED").get_to(d.DT_FIXED);
   j.at("NSTEPS").get_to(d.NSTEPS);
+
+    // merge/split: tutti opzionali (default = ms_config). DATA.json vecchi restano validi.
+  d.ms_alpha                  = j.value("ms_alpha", 0.9);
+  d.ms_beta                   = j.value("ms_beta", 0.30);
+  d.ms_split_hp_min           = j.value("ms_split_hp_min", 0.0);
+  d.ms_shear_split            = j.value("ms_shear_split", 1e30);
+  d.ms_hp_min                 = j.value("ms_hp_min", 0.05);
+  d.ms_max_dv                 = j.value("ms_max_dv", 0.01);
+  d.ms_min_level              = j.value("ms_min_level", -2);
+  d.ms_max_level              = j.value("ms_max_level", 2);
+  d.ms_min_particles_per_cell = j.value("ms_min_particles_per_cell", 2);
+  d.ms_call_interval          = j.value("ms_call_interval", 10);
+  d.ms_max_ops                = j.value("ms_max_ops", 1e9);
+
 }
 
 DATA::DATA (const char* filename) {
