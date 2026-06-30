@@ -35,10 +35,15 @@ yp = yp(:);
 hp = 60 - interp2(X, Y, Z, xp, yp, 'linear');
 
 % Remove particles with zero or negative height
-hzero = find(hp <= 0.001);
+hzero = find(hp <= 1.0);
 hp(hzero) = [];
 xp(hzero) = [];
 yp(hzero) = [];
+
+
+% rimuovi particelle nelle celle di bordo (la BC le inchioda -> non si muovono)
+edge = (xp < hx | xp > Lx - hx | yp < hy | yp > Ly - hy);
+xp(edge) = [];  yp(edge) = [];  hp(edge) = [];
 
 nmp = numel(xp);
 fprintf('Particles: %d\n', nmp);
@@ -48,7 +53,7 @@ fprintf('Particles: %d\n', nmp);
 g     = 9.81;
 xi    = 200;      % turbulence coefficient [m/s^2]
 rhosy = 1200.0;   % mudflow density [kg/m^3]
-T     = 10;        % final time [s]
+T     = 20;        % final time [s]
 
 %% Initial conditions for particles
 Msys  = sum(hp * DX * DY * rhosy);
@@ -137,6 +142,8 @@ v2j(FID, "DT_FIXED",  DT_FIXED,    false);
 v2j(FID, "NSTEPS", NSTEPS,   false);
 v2j(FID, "FRICTION_ON", FRICTION,   false);
 v2j(FID, "ms_alpha", 1.5, false);
+v2j(FID, "ms_split_hp_min", 0.3, false);
+
 v2j(FID, "ms_beta",  0.3, true);
 
 fprintf(FID, "}\n");

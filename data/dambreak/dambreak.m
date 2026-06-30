@@ -92,7 +92,7 @@ mu = 50.;
 phi = 37.;
 tauy = 2000.;
 
-MERGE_SPLIT_ON = 0;
+MERGE_SPLIT_ON = 1;
 
 BINGHAM = 0.0;
 FRICTION = 0.0;
@@ -193,6 +193,9 @@ v2j(FID, "phi",        phi,        false);
 v2j(FID, "tauy",       tauy,       false);
 
 v2j(FID, "MERGE_SPLIT_ON", MERGE_SPLIT_ON, false);
+
+v2j(FID, "ms_alpha", 1.3, false);
+v2j(FID, "ms_beta",  0.3, false);
 
 v2j(FID, "BINGHAM_ON", BINGHAM,    false);
 v2j(FID, "FRICTION_ON",FRICTION,   false);
