@@ -22,7 +22,7 @@ LDLIBS     :=
 
 LIBOBJS    := $(BUILDDIR)/particles.o $(BUILDDIR)/timer.o
 
-TARGETS    := wbal optim optim_par gpu_offload
+TARGETS    := optim_par gpu_offload # wbal optim
 EXES       := $(addprefix $(BUILDDIR)/, $(TARGETS))
 
 
@@ -41,11 +41,11 @@ $(BUILDDIR)/particles.o: $(QGSRC)/particles.cpp | $(BUILDDIR)
 $(BUILDDIR)/timer.o: $(TIMERSRC)/timer.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/wbal: $(MAINDIR)/wbal.cpp $(LIBOBJS) | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+# $(BUILDDIR)/wbal: $(MAINDIR)/wbal.cpp $(LIBOBJS) | $(BUILDDIR)
+#	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-$(BUILDDIR)/optim: $(MAINDIR)/optim.cpp $(LIBOBJS) | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+# $(BUILDDIR)/optim: $(MAINDIR)/optim.cpp $(LIBOBJS) | $(BUILDDIR)
+#	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 $(BUILDDIR)/optim_par: $(MAINDIR)/optim_par.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
@@ -56,4 +56,3 @@ $(BUILDDIR)/gpu_offload: $(MAINDIR)/gpu_offload.cpp $(LIBOBJS) | $(BUILDDIR)
 
 clean:
 	rm -rf $(BUILDDIR)
-
