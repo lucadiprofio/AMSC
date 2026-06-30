@@ -1,4 +1,4 @@
-#include "merge_split_ops.h"
+#include "merge_split_ops_cmes.h"
 #include "mpm_data.h"
 #include "gpu_kernels.h"
 #include <cmath>
@@ -306,6 +306,14 @@ int main () {
       // Merge-split (adaptive particle refinement/coarsening)
       // ================================================================
       ms_config ms_cfg;
+      ms_cfg.alpha = data.ms_alpha;   ms_cfg.beta = data.ms_beta;
+      ms_cfg.split_hp_min = data.ms_split_hp_min;
+      ms_cfg.hp_min = data.ms_hp_min; ms_cfg.max_dv = data.ms_max_dv;
+      ms_cfg.min_level = data.ms_min_level; ms_cfg.max_level = data.ms_max_level;
+      ms_cfg.call_interval = data.ms_call_interval; ms_cfg.max_ops = (int)data.ms_max_ops;
+      ms_cfg.shear_split = data.ms_shear_split;
+      ms_cfg.min_particles_per_cell = data.ms_min_particles_per_cell;
+
       if (ms_on && it % ms_cfg.call_interval == 0 && it > 0) {
         my_timer.tic ("merge_split");
  
@@ -313,7 +321,7 @@ int main () {
  
         // synchronize particle arrays from GPU to CPU before merge/split
         #pragma omp target update from(d_x[0:np_old], d_y[0:np_old], d_vpx[0:np_old], d_vpy[0:np_old], d_hp[0:np_old], \
-                                       d_Mp[0:np_old], d_Vp[0:np_old], d_Ap[0:np_old])
+                                       d_Mp[0:np_old], d_Vp[0:np_old], d_Ap[0:np_old], d_mom_px[0:np_old], d_mom_py[0:np_old])
  
         // delete old particle arrays from GPU memory
         #pragma omp target exit data map(delete: d_x[0:np_old], d_y[0:np_old], d_vpx[0:np_old], d_vpy[0:np_old], d_apx[0:np_old], \
@@ -326,7 +334,7 @@ int main () {
                                                  d_vpxL[0:np_old], d_vpyL[0:np_old], d_H[0:np_old], d_p2g[0:np_old], d_cptcls[0:np_old])
  
         // host side merge/split operation
-        adaptive_merge_split<idx_t> (ptcls, ms_cfg);
+        adaptive_merge_split<idx_t> (ptcls, ms_cfg, dt);
  
         
         np = ptcls.num_particles;

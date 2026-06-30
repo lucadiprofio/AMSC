@@ -98,8 +98,8 @@ from_json (const nlohmann::json &j, DATA &d)
 
   j.at("eq_level").get_to(d.eq_level);
 
-  j.at("DT_FIXED").get_to(d.DT_FIXED);
-  j.at("NSTEPS").get_to(d.NSTEPS);
+  d.DT_FIXED = j.value("DT_FIXED", 0.0);
+  d.NSTEPS   = j.value("NSTEPS", 0);
 
     // merge/split: tutti opzionali (default = ms_config). DATA.json vecchi restano validi.
   d.ms_alpha                  = j.value("ms_alpha", 0.9);
