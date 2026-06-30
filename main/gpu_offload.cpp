@@ -255,8 +255,20 @@ int main () {
   double dt = 1.0e-3;
   double cel;
 
-  #pragma omp target data map(to: d_Z[0:nn], d_Mp[0:np]) map(tofrom: d_x[0:np], d_y[0:np], d_vpx[0:np], d_vpy[0:np], d_apx[0:np], d_apy[0:np], d_hp[0:np], d_Ap[0:np], d_Vp[0:np], d_mom_px[0:np], d_mom_py[0:np], d_vpx_dx[0:np], d_vpx_dy[0:np], d_vpy_dx[0:np], d_vpy_dy[0:np], d_Fb_x[0:np], d_Fb_y[0:np], d_Fric_px[0:np], d_Fric_py[0:np], d_F11[0:np], d_F12[0:np], d_F21[0:np], d_F22[0:np], d_dZxp[0:np], d_dZyp[0:np], d_Zp[0:np], d_hpZ[0:np], d_Fpx[0:np], d_Fpy[0:np], d_vpxL[0:np], d_vpyL[0:np], d_H[0:np], d_Mv[0:nn], d_mom_vx[0:nn], d_mom_vy[0:nn], d_F_ext_vx[0:nn], d_F_ext_vy[0:nn], d_F_int_vx[0:nn], d_F_int_vy[0:nn], d_Ftot_vx[0:nn], d_Ftot_vy[0:nn], d_avx[0:nn], d_avy[0:nn], d_vvx[0:nn], d_vvy[0:nn], d_vvxL[0:nn], d_vvyL[0:nn], d_Fric_x[0:nn], d_Fric_y[0:nn], d_FPxv[0:nn], d_FPyv[0:nn], d_HV[0:nn], d_pv_rho[0:nn], d_pv_vvx[0:nn], d_pv_vvy[0:nn], d_pv_avx[0:nn], d_pv_avy[0:nn], d_p2g[0:np], d_cstart[0:ncells+1], d_cptcls[0:np], d_ccidx[0:ncells], d_coloff[0:5])
+#pragma omp target data map(to: d_Z[0:nn], d_cstart[0:ncells+1], d_ccidx[0:ncells], d_coloff[0:5]) \
+                          map(alloc: d_Mv[0:nn], d_mom_vx[0:nn], d_mom_vy[0:nn], d_F_ext_vx[0:nn], d_F_ext_vy[0:nn], \
+                                     d_F_int_vx[0:nn], d_F_int_vy[0:nn], d_Ftot_vx[0:nn], d_Ftot_vy[0:nn], d_avx[0:nn], \
+                                     d_avy[0:nn], d_vvx[0:nn], d_vvy[0:nn], d_vvxL[0:nn], d_vvyL[0:nn], d_Fric_x[0:nn], \
+                                     d_Fric_y[0:nn], d_FPxv[0:nn], d_FPyv[0:nn], d_HV[0:nn], d_pv_rho[0:nn], \
+                                     d_pv_vvx[0:nn], d_pv_vvy[0:nn], d_pv_avx[0:nn], d_pv_avy[0:nn])
   {
+    #pragma omp target enter data map(to: d_x[0:np], d_y[0:np], d_vpx[0:np], d_vpy[0:np], d_apx[0:np], d_apy[0:np], \
+                                          d_hp[0:np], d_Ap[0:np], d_Vp[0:np], d_Mp[0:np], d_mom_px[0:np], d_mom_py[0:np], \
+                                          d_vpx_dx[0:np], d_vpx_dy[0:np], d_vpy_dx[0:np], d_vpy_dy[0:np], d_Fb_x[0:np], \
+                                          d_Fb_y[0:np], d_Fric_px[0:np], d_Fric_py[0:np], d_F11[0:np], d_F12[0:np], \
+                                          d_F21[0:np], d_F22[0:np], d_dZxp[0:np], d_dZyp[0:np], d_Zp[0:np], d_hpZ[0:np], \
+                                          d_Fpx[0:np], d_Fpy[0:np], d_vpxL[0:np], d_vpyL[0:np], d_H[0:np], \
+                                          d_p2g[0:np], d_cptcls[0:np])
 
     // =======================================================================
     // TIME LOOP
@@ -290,21 +302,8 @@ int main () {
 
       it++;
 
-            // ================================================================
+      // ================================================================
       // Merge-split (adaptive particle refinement/coarsening)
-      //
-      // Runs every ms_cfg.call_interval steps. Changes ptcls.num_particles,
-      // which reallocates the underlying std::vector storage — the host
-      // pointers (.data()) returned after the call are different from
-      // before. Since the omp target data region is PERSISTENT (opened
-      // once, outside the time loop), its existing device mapping for
-      // the old host addresses becomes stale the moment the vectors are
-      // reallocated. We must explicitly:
-      //   1) release the stale device buffers (sized to np_old)
-      //   2) allocate fresh device buffers (sized to the new np) and
-      //      populate them from the new host addresses
-      // This costs O(np) transfer, but only once every call_interval
-      // steps — far cheaper than reopening the whole persistent region.
       // ================================================================
       ms_config ms_cfg;
       if (ms_on && it % ms_cfg.call_interval == 0 && it > 0) {
@@ -312,8 +311,24 @@ int main () {
  
         const int np_old = np;
  
+        // synchronize particle arrays from GPU to CPU before merge/split
+        #pragma omp target update from(d_x[0:np_old], d_y[0:np_old], d_vpx[0:np_old], d_vpy[0:np_old], d_hp[0:np_old], \
+                                       d_Mp[0:np_old], d_Vp[0:np_old], d_Ap[0:np_old])
+ 
+        // delete old particle arrays from GPU memory
+        #pragma omp target exit data map(delete: d_x[0:np_old], d_y[0:np_old], d_vpx[0:np_old], d_vpy[0:np_old], d_apx[0:np_old], \
+                                                 d_apy[0:np_old], d_hp[0:np_old], d_Ap[0:np_old], d_Vp[0:np_old], d_Mp[0:np_old], \
+                                                 d_mom_px[0:np_old], d_mom_py[0:np_old], d_F11[0:np_old], d_F12[0:np_old], \
+                                                 d_F21[0:np_old], d_F22[0:np_old], d_vpx_dx[0:np_old], d_vpx_dy[0:np_old], \
+                                                 d_vpy_dx[0:np_old], d_vpy_dy[0:np_old], d_Fb_x[0:np_old], d_Fb_y[0:np_old], \
+                                                 d_Fric_px[0:np_old], d_Fric_py[0:np_old], d_dZxp[0:np_old], d_dZyp[0:np_old], \
+                                                 d_Zp[0:np_old], d_hpZ[0:np_old], d_Fpx[0:np_old], d_Fpy[0:np_old], \
+                                                 d_vpxL[0:np_old], d_vpyL[0:np_old], d_H[0:np_old], d_p2g[0:np_old], d_cptcls[0:np_old])
+ 
+        // host side merge/split operation
         adaptive_merge_split<idx_t> (ptcls, ms_cfg);
  
+        
         np = ptcls.num_particles;
  
         d_x       = ptcls.x.data ();
@@ -357,16 +372,16 @@ int main () {
         d_ccidx  = ptcls.color_cell_idx.data ();
         d_coloff = ptcls.color_offsets;
  
-        // Release stale device buffers (np_old-sized) for all np-sized
-        // particle arrays plus the CSR/coloring connectivity.
-        #pragma omp target exit data map(release: d_x[0:np_old], d_y[0:np_old], d_vpx[0:np_old], d_vpy[0:np_old], d_apx[0:np_old], d_apy[0:np_old], d_hp[0:np_old], d_Ap[0:np_old], d_Vp[0:np_old], d_Mp[0:np_old], d_mom_px[0:np_old], d_mom_py[0:np_old], d_F11[0:np_old], d_F12[0:np_old], d_F21[0:np_old], d_F22[0:np_old], d_vpx_dx[0:np_old], d_vpx_dy[0:np_old], d_vpy_dx[0:np_old], d_vpy_dy[0:np_old], d_Fb_x[0:np_old], d_Fb_y[0:np_old], d_Fric_px[0:np_old], d_Fric_py[0:np_old], d_dZxp[0:np_old], d_dZyp[0:np_old], d_Zp[0:np_old], d_hpZ[0:np_old], d_Fpx[0:np_old], d_Fpy[0:np_old], d_vpxL[0:np_old], d_vpyL[0:np_old], d_H[0:np_old], d_p2g[0:np_old], d_cptcls[0:np_old])
+        // update GPU with new particle arrays (new size, new addresses)
+        #pragma omp target enter data map(to: d_x[0:np], d_y[0:np], d_vpx[0:np], d_vpy[0:np], d_apx[0:np], d_apy[0:np], \
+                                              d_hp[0:np], d_Ap[0:np], d_Vp[0:np], d_Mp[0:np], d_mom_px[0:np], d_mom_py[0:np], \
+                                              d_F11[0:np], d_F12[0:np], d_F21[0:np], d_F22[0:np], d_vpx_dx[0:np], d_vpx_dy[0:np], \
+                                              d_vpy_dx[0:np], d_vpy_dy[0:np], d_Fb_x[0:np], d_Fb_y[0:np], d_Fric_px[0:np], \
+                                              d_Fric_py[0:np], d_dZxp[0:np], d_dZyp[0:np], d_Zp[0:np], d_hpZ[0:np], \
+                                              d_Fpx[0:np], d_Fpy[0:np], d_vpxL[0:np], d_vpyL[0:np], d_H[0:np], \
+                                              d_p2g[0:np], d_cptcls[0:np])
  
-        // Allocate + populate fresh device buffers at the new np.
-        #pragma omp target enter data map(to: d_x[0:np], d_y[0:np], d_vpx[0:np], d_vpy[0:np], d_apx[0:np], d_apy[0:np], d_hp[0:np], d_Ap[0:np], d_Vp[0:np], d_Mp[0:np], d_mom_px[0:np], d_mom_py[0:np], d_F11[0:np], d_F12[0:np], d_F21[0:np], d_F22[0:np], d_vpx_dx[0:np], d_vpx_dy[0:np], d_vpy_dx[0:np], d_vpy_dy[0:np], d_Fb_x[0:np], d_Fb_y[0:np], d_Fric_px[0:np], d_Fric_py[0:np], d_dZxp[0:np], d_dZyp[0:np], d_Zp[0:np], d_hpZ[0:np], d_Fpx[0:np], d_Fpy[0:np], d_vpxL[0:np], d_vpyL[0:np], d_H[0:np], d_p2g[0:np], d_cptcls[0:np])
- 
-        // cell_start/color_cell_idx/color_offsets are sized by ncells
-        // (fixed) but their CONTENT changes after init_particle_mesh,
-        // so a plain update suffices — no release/realloc needed.
+        // update grid arrays that maintain size 'ncells' but have new values from init_particle_mesh
         #pragma omp target update to(d_cstart[0:ncells+1], d_ccidx[0:ncells], d_coloff[0:5])
  
         my_timer.toc ("merge_split");
