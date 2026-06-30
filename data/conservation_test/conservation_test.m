@@ -77,7 +77,7 @@ FRICTION = 1.0;
 CFL      = 0.2;
 BC_FLAG  = 1;
 
-MERGE_SPLIT_ON = 1;
+MERGE_SPLIT_ON = 0;
 
 eq_level = 0.0;   % non well-balanced
 

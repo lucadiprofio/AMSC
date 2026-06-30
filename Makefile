@@ -1,10 +1,9 @@
-CXX        := nvc++ #g++
+CXX        := nvc++
 CXXSTD     := -std=c++17
-OPT        := -O2 -mp=gpu -gpu=cc89 -Minfo=accel #-O3 -DNDEBUG
-WARN       := 
+OPT        := -O2 -mp=gpu -gpu=cc89
+WARN       :=
 DEBUG      := #-g
 
-# paths
 ROOT       := $(shell pwd)
 QGINC      := $(ROOT)/quadgrid/include
 QGSRC      := $(ROOT)/quadgrid/src
@@ -20,11 +19,10 @@ CXXFLAGS   := $(CXXSTD) $(OPT) $(WARN) $(DEBUG) $(INCLUDES)
 LDFLAGS    := -mp=gpu -gpu=cc89
 LDLIBS     :=
 
-LIBOBJS    := $(BUILDDIR)/particles.o $(BUILDDIR)/timer.o
+LIBOBJS    := $(BUILDDIR)/particles.o $(BUILDDIR)/timer.o $(BUILDDIR)/gpu_kernels.o
 
-TARGETS    := wbal optim optim_par gpu_offload
+TARGETS    := gpu_offload
 EXES       := $(addprefix $(BUILDDIR)/, $(TARGETS))
-
 
 .PHONY: all clean libs
 
@@ -41,19 +39,11 @@ $(BUILDDIR)/particles.o: $(QGSRC)/particles.cpp | $(BUILDDIR)
 $(BUILDDIR)/timer.o: $(TIMERSRC)/timer.cpp | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILDDIR)/wbal: $(MAINDIR)/wbal.cpp $(LIBOBJS) | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
-
-$(BUILDDIR)/optim: $(MAINDIR)/optim.cpp $(LIBOBJS) | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
-
-$(BUILDDIR)/optim_par: $(MAINDIR)/optim_par.cpp $(LIBOBJS) | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+$(BUILDDIR)/gpu_kernels.o: $(MAINDIR)/gpu_kernels.cpp $(MAINDIR)/gpu_kernels.h | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILDDIR)/gpu_offload: $(MAINDIR)/gpu_offload.cpp $(LIBOBJS) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $< $(LIBOBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-
 clean:
 	rm -rf $(BUILDDIR)
-

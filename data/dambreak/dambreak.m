@@ -92,7 +92,7 @@ mu = 50.;
 phi = 37.;
 tauy = 2000.;
 
-MERGE_SPLIT_ON = 1;
+MERGE_SPLIT_ON = 0;
 
 BINGHAM = 0.0;
 FRICTION = 0.0;
