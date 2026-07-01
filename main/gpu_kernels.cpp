@@ -361,14 +361,11 @@ void g2p_velocity_and_advect (
     double* d_x, double* d_y,
     double* d_vpx, double* d_vpy,
     double* d_apx, double* d_apy,
-    double* d_vpxL, double* d_vpyL,
     double* d_mom_px, double* d_mom_py,
-    const double* d_Mp,
-    double* max_vmag_out) {
+    double* d_vpxL, double* d_vpyL,
+    const double* d_Mp) {
 
-  double max_vmag = 0.0;
-
-  #pragma omp target teams loop firstprivate(np, nrows, hx, hy, dt) reduction(max:max_vmag)
+  #pragma omp target teams loop
   for (int ip = 0; ip < np; ip++) {
     const double xx = d_x[ip], yy = d_y[ip];
     const int    ci = d_p2g[ip];
@@ -385,23 +382,28 @@ void g2p_velocity_and_advect (
       vyL += N * d_vvyL[nidx];
     }
 
+    d_vpx[ip] = vxL;
+    d_vpy[ip] = vyL;
     d_apx[ip] = ax;
     d_apy[ip] = ay;
+
+    d_x[ip] += dt * vxL;
+    d_y[ip] += dt * vyL;
+
+    double eps = 1e-10;
+    double Lx = ncols * hx;
+    double Ly = nrows * hy;
+    if (d_x[ip] < eps) d_x[ip] = eps;
+    if (d_x[ip] > Lx - eps) d_x[ip] = Lx - eps;
+    if (d_y[ip] < eps) d_y[ip] = eps;
+    if (d_y[ip] > Ly - eps) d_y[ip] = Ly - eps;
+    
     d_vpxL[ip] = vxL;
     d_vpyL[ip] = vyL;
 
-    const double vmag = sqrt (vxL*vxL + vyL*vyL);
-    if (vmag > max_vmag) max_vmag = vmag;
-
-    d_x[ip] = xx + dt * vxL;
-    d_y[ip] = yy + dt * vyL;
-    d_vpx[ip] = vxL;
-    d_vpy[ip] = vyL;
     d_mom_px[ip] = vxL * d_Mp[ip];
     d_mom_py[ip] = vyL * d_Mp[ip];
   }
-
-  *max_vmag_out = max_vmag;
 }
 
 
@@ -412,13 +414,11 @@ void g2pd_gradients_and_height_update (
     double* d_vpx_dx, double* d_vpx_dy,
     double* d_vpy_dx, double* d_vpy_dy,
     double* d_hp, double* d_Vp, double* d_Ap,
-    int* n_scfloor_out, int* n_hpfloor_out,
     double* min_sc_out, double* min_hp_out) {
 
-  int n_scfloor=0, n_hpfloor=0;
   double min_sc=1e30, min_hp=1e30;
 
-  #pragma omp target teams loop firstprivate(np, nrows, hx, hy, dt) reduction(+:n_scfloor,n_hpfloor) reduction(min:min_sc,min_hp)
+  #pragma omp target teams loop firstprivate(np, nrows, hx, hy, dt) reduction(min:min_sc,min_hp)
   for (int ip = 0; ip < np; ip++) {
     const double xx = d_x[ip], yy = d_y[ip];
     const int    ci = d_p2g[ip];
@@ -442,18 +442,15 @@ void g2pd_gradients_and_height_update (
 
     double sc = 1.0 + dt * (vxdx + vydy);
     if (sc < min_sc) min_sc = sc;
-    if (sc < 0.1) { sc = 0.1; n_scfloor++; }
     d_hp[ip] /= sc;
     if (d_hp[ip] < min_hp) min_hp = d_hp[ip];
-    if (d_hp[ip] < 1e-2)  { d_hp[ip] = 1e-2; n_hpfloor++; }
-    if (d_Vp[ip] < 1e-10)   d_Vp[ip] = 1e-10;
     d_Ap[ip] = d_Vp[ip] / d_hp[ip];
   }
 
-  *n_scfloor_out = n_scfloor;
-  *n_hpfloor_out = n_hpfloor;
-  *min_sc_out    = min_sc;
-  *min_hp_out    = min_hp;
+  // *n_scfloor_out = n_scfloor;
+  // *n_hpfloor_out = n_hpfloor;
+  // *min_sc_out    = min_sc;
+  // *min_hp_out    = min_hp;
 }
 
 
@@ -531,6 +528,7 @@ void bingham_stress_update (
     if (h     < min_hp)    min_hp    = h;
     if (nv    > max_nv)    max_nv    = nv;
     if (fabs(d_F11[ip]) > max_F11) max_F11 = fabs(d_F11[ip]);
+
     const double dev_  = fabs(cc*coeff*Dxx);
     const double pres_ = fabs(0.5*rho*g_c*h_corr);
     if (dev_  > max_dev)  max_dev  = dev_;
@@ -538,13 +536,13 @@ void bingham_stress_update (
     if (fabs(Dxx) > max_Dxx) max_Dxx = fabs(Dxx);
   }
 
-  *max_coeff_out = max_coeff;
-  *min_hp_out    = min_hp;
-  *max_nv_out    = max_nv;
-  *max_F11_out   = max_F11;
-  *max_dev_out   = max_dev;
-  *max_pres_out  = max_pres;
-  *max_Dxx_out   = max_Dxx;
+  // *max_coeff_out = max_coeff;
+  // *min_hp_out    = min_hp;
+  // *max_nv_out    = max_nv;
+  // *max_F11_out   = max_F11;
+  // *max_dev_out   = max_dev;
+  // *max_pres_out  = max_pres;
+  // *max_Dxx_out   = max_Dxx;
 }
 
 

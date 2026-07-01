@@ -126,10 +126,9 @@ void g2p_velocity_and_advect (
     double* d_x, double* d_y,
     double* d_vpx, double* d_vpy,
     double* d_apx, double* d_apy,
-    double* d_vpxL, double* d_vpyL,
     double* d_mom_px, double* d_mom_py,
-    const double* d_Mp,
-    double* max_vmag_out);
+    double* d_vpxL, double* d_vpyL,
+    const double* d_Mp);
 
 // -------------------------------------------------------------------
 // K8 — G2PD: interpolate vvxL,vvyL gradients to particles, then
@@ -142,7 +141,6 @@ void g2pd_gradients_and_height_update (
     double* d_vpx_dx, double* d_vpx_dy,
     double* d_vpy_dx, double* d_vpy_dy,
     double* d_hp, double* d_Vp, double* d_Ap,
-    int* n_scfloor_out, int* n_hpfloor_out,
     double* min_sc_out, double* min_hp_out);
 
 // -------------------------------------------------------------------

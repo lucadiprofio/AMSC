@@ -19,8 +19,8 @@ int main () {
   DATA data ("DATA.json");
   bool WRITE_OUTPUT = true;
 
-  // std::ofstream err_file ("conservation_errors_gpu.csv");
-  // err_file << "time,err_mass,err_mom\n";
+  std::ofstream err_file ("conservation_errors_gpu.csv");
+  err_file << "time,err_mass,err_mom\n";
 
   // -----------------------------------------------------------------------
   // Grid + particles setup
@@ -241,8 +241,8 @@ int main () {
   // re-uploaded after each rebuild via #pragma omp target update to.
   // -----------------------------------------------------------------------
   ptcls.init_particle_mesh ();
-
   int *d_p2g    = ptcls.ptcl_to_grd.data ();
+
   int *d_cstart = ptcls.cell_start.data ();
   int *d_cptcls = ptcls.cell_ptcls.data ();
   int *d_ccidx  = ptcls.color_cell_idx.data ();
@@ -375,6 +375,7 @@ int main () {
  
         ptcls.init_particle_mesh ();
         d_p2g    = ptcls.ptcl_to_grd.data ();
+
         d_cstart = ptcls.cell_start.data ();
         d_cptcls = ptcls.cell_ptcls.data ();
         d_ccidx  = ptcls.color_cell_idx.data ();
@@ -423,7 +424,7 @@ int main () {
           np, nrows, hx, hy, d_x, d_y, d_p2g, d_Z, d_dZxp, d_dZyp);
 
       // ================================================================
-      // K3 — gravity force + friction-to-particle-force (split)
+      // K3 — gravity force + friction-to-particle-force
       // ================================================================
       gpu_kernels::gravity_force (
           np, g_c, d_hp, d_H, d_Mp, d_dZxp, d_dZyp, d_Fpx, d_Fpy);
@@ -456,6 +457,15 @@ int main () {
           d_x, d_y, d_Vp, d_F11, d_F12, d_F21, d_F22,
           d_F_int_vx, d_F_int_vy);
 
+      double sum_Mv = 0.0, sum_mvx = 0.0, sum_mvy = 0.0;
+#pragma omp target teams distribute parallel for \
+      reduction(+:sum_Mv,sum_mvx,sum_mvy)
+      for (int in = 0; in < nn; ++in) {
+        sum_Mv  += d_Mv[in];
+        sum_mvx += d_mom_vx[in];
+        sum_mvy += d_mom_vy[in];
+      }
+
       // ================================================================
       // K6 — Ftot+momentum, then nodal vel/acc+BC (split)
       // ================================================================
@@ -471,25 +481,22 @@ int main () {
       // ================================================================
       // K7 — G2P velocity + advect + momentum
       // ================================================================
-      double max_vmag = 0.0;
       gpu_kernels::g2p_velocity_and_advect (
           np, nrows, ncols, hx, hy, dt,
           d_p2g, d_vvxL, d_vvyL, d_avx, d_avy,
           d_x, d_y, d_vpx, d_vpy, d_apx, d_apy,
-          d_vpxL, d_vpyL, d_mom_px, d_mom_py, d_Mp,
-          &max_vmag);
+          d_mom_px, d_mom_py,
+          d_vpxL, d_vpyL, d_Mp);
 
       // ================================================================
       // K8 — G2PD velocity gradients + height update (fused)
       // ================================================================
-      int    n_scfloor = 0, n_hpfloor = 0;
       double min_sc = 1e30, min_hp_g8 = 1e30;
       gpu_kernels::g2pd_gradients_and_height_update (
           np, nrows, hx, hy, dt,
           d_x, d_y, d_p2g, d_vvxL, d_vvyL,
           d_vpx_dx, d_vpx_dy, d_vpy_dx, d_vpy_dy,
-          d_hp, d_Vp, d_Ap,
-          &n_scfloor, &n_hpfloor, &min_sc, &min_hp_g8);
+          d_hp, d_Vp, d_Ap, &min_sc, &min_hp_g8);
 
       // ================================================================
       // K9 — Voellmy friction + Bingham stress update (split)
@@ -537,6 +544,7 @@ int main () {
       my_timer.tic ("reorder");
       ptcls.init_particle_mesh ();
       d_p2g    = ptcls.ptcl_to_grd.data ();
+
       d_cstart = ptcls.cell_start.data ();
       d_cptcls = ptcls.cell_ptcls.data ();
       d_ccidx  = ptcls.color_cell_idx.data ();
@@ -547,15 +555,15 @@ int main () {
 
       // ================================================================
       if (WRITE_OUTPUT) {
-        my_timer.tic ("diagnostics");
+        my_timer.tic ("save csv");
         #pragma omp target update from(d_vpx[0:np], d_vpy[0:np], d_hp[0:np], d_hpZ[0:np], d_Zp[0:np], d_apx[0:np], d_apy[0:np])
-        if (it % 10 == 0) {
+        // if (it % 10 == 0) {
           std::string fn = "nc_particles_" + std::to_string(it) + ".csv";
           std::ofstream OF (fn.c_str());
           ptcls.print<particles_t::output_format::csv>(OF);
           OF.close ();
-        }
-        my_timer.toc ("diagnostics");
+        // }
+        my_timer.toc ("save csv");
       }
 
       t += dt;
