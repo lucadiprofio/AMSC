@@ -309,8 +309,8 @@ void nodal_force_and_momentum (
     const double fty = d_F_ext_vy[iv] + d_F_int_vy[iv];
     d_Ftot_vx[iv] = ftx;
     d_Ftot_vy[iv] = fty;
-    d_mom_vx[iv] += dt * ftx;
-    d_mom_vy[iv] += dt * fty;
+    //d_mom_vx[iv] += dt * ftx;
+    //d_mom_vy[iv] += dt * fty;
   }
 }
 
