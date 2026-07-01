@@ -1,40 +1,6 @@
 #ifndef MERGE_SPLIT_OPS_CMES_H
 #define MERGE_SPLIT_OPS_CMES_H
 
-// =============================================================================
-//  Adaptive merge/split for depth-averaged (shallow-water) MPM.
-//
-//  Criterion: LOCAL and deformation-based (CMES 2009, Ma/Zhang/Lian/Zhou),
-//  adapted to the depth-averaged variables (Ap, hp, Vp). No ELFS / no BFS.
-//
-//  Characteristic length of a column:   r_i = sqrt(Ap_i)
-//  Note: Ap evolves as  Ap *= (1 + dt*div(v))  every step, so Ap already
-//  integrates the in-plane stretch history -> r_i is the accumulated-stretch
-//  indicator (no reference configuration needed, unlike a solid).
-//
-//    - SPLIT  if  r_i > alpha * min_h        (column over-stretched/thinned)
-//             or  gamma_dot*dt > shear_split (high deviatoric shear, optional)
-//             AND hp_i >= split_hp_min       (do NOT refine negligibly-thin mass)
-//    - MERGE  if  r_i < beta  * min_h        (column over-compressed/thick)
-//
-//  GENERIC HEADER: behaviour is set entirely through ms_config. Specialize a
-//  case by tuning the parameters; the optional triggers (shear_split) and the
-//  split_hp_min gate are DISABLED by default so the default is fully generic.
-//
-//  Consistency rules (matched to the time-step update hp /= (1+dt*div),
-//  Vp = const, Ap = Vp/hp):
-//    - Mp, Vp conserved (sum on merge, halve on split).
-//    - hp is the PRIMARY field; Ap is DERIVED as Ap = Vp/hp.
-//    - on MERGE: sum Vp and Ap, then DERIVE hp = Vp/Ap (do NOT average hp).
-//    - on SPLIT: 1 -> 2 along the principal stretch direction.
-//
-//  Conservation:
-//    - mass:      exact (sum / halving).
-//    - momentum:  exact (mass-weighted velocity on merge; vp copied on split).
-//    - energy:    merge is inelastic (consistent with Bingham dissipation);
-//                 only co-moving particles are merged (|dv| < max_dv).
-// =============================================================================
-
 #include <cmath>
 #include <iostream>
 #include <limits>

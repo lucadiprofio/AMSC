@@ -306,11 +306,15 @@ int main () {
       // Merge-split (adaptive particle refinement/coarsening)
       // ================================================================
       ms_config ms_cfg;
-      ms_cfg.alpha = data.ms_alpha;   ms_cfg.beta = data.ms_beta;
+      ms_cfg.alpha = data.ms_alpha;
+      ms_cfg.beta = data.ms_beta;
       ms_cfg.split_hp_min = data.ms_split_hp_min;
-      ms_cfg.hp_min = data.ms_hp_min; ms_cfg.max_dv = data.ms_max_dv;
-      ms_cfg.min_level = data.ms_min_level; ms_cfg.max_level = data.ms_max_level;
-      ms_cfg.call_interval = data.ms_call_interval; ms_cfg.max_ops = (int)data.ms_max_ops;
+      ms_cfg.hp_min = data.ms_hp_min; 
+      ms_cfg.max_dv = data.ms_max_dv;
+      ms_cfg.min_level = data.ms_min_level; 
+      ms_cfg.max_level = data.ms_max_level;
+      ms_cfg.call_interval = data.ms_call_interval; 
+      ms_cfg.max_ops = (int)data.ms_max_ops;
       ms_cfg.shear_split = data.ms_shear_split;
       ms_cfg.min_particles_per_cell = data.ms_min_particles_per_cell;
 
@@ -557,12 +561,12 @@ int main () {
       if (WRITE_OUTPUT) {
         my_timer.tic ("save csv");
         #pragma omp target update from(d_vpx[0:np], d_vpy[0:np], d_hp[0:np], d_hpZ[0:np], d_Zp[0:np], d_apx[0:np], d_apy[0:np])
-        // if (it % 10 == 0) {
+         if (it % 100 == 0) {
           std::string fn = "nc_particles_" + std::to_string(it) + ".csv";
           std::ofstream OF (fn.c_str());
           ptcls.print<particles_t::output_format::csv>(OF);
           OF.close ();
-        // }
+         }
         my_timer.toc ("save csv");
       }
 

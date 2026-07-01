@@ -27,7 +27,6 @@ struct DATA
   std::vector<double> dZdx;
   std::vector<double> dZdy;
 
-  // rheology
   double mu;
   double phi;
   double tauy;
@@ -41,10 +40,9 @@ struct DATA
 
   double eq_level;
 
-  double DT_FIXED;   // dal JSON: >0 = dt fisso (scaling), 0 = adattivo
-  int    NSTEPS;     // dal JSON: passi in modalità dt fisso
+  double DT_FIXED;
+  int    NSTEPS;
 
-    // merge/split (opzionali: default = valori di ms_config) -> si tarano dal .m
   double ms_alpha;
   double ms_beta;
   double ms_split_hp_min;
@@ -55,7 +53,7 @@ struct DATA
   int    ms_max_level;
   int    ms_min_particles_per_cell;
   int    ms_call_interval;
-  double ms_max_ops; // double per evitare overflow int da JSON, poi cast
+  double ms_max_ops;
 
   DATA (const char* filename);
 };
@@ -101,7 +99,6 @@ from_json (const nlohmann::json &j, DATA &d)
   d.DT_FIXED = j.value("DT_FIXED", 0.0);
   d.NSTEPS   = j.value("NSTEPS", 0);
 
-    // merge/split: tutti opzionali (default = ms_config). DATA.json vecchi restano validi.
   d.ms_alpha                  = j.value("ms_alpha", 0.9);
   d.ms_beta                   = j.value("ms_beta", 0.30);
   d.ms_split_hp_min           = j.value("ms_split_hp_min", 0.0);
